@@ -21,27 +21,32 @@ from PIL import Image, ImageDraw, ImageTk
 from . import config, text
 from . import protocol as p
 
-W = 300                     # card width in px at 96 dpi (height: layout()); everything is in these units
-PAD = 16
+W = 308                     # card width in px at 96 dpi (height: layout()); everything is in these units
+PAD = 14
 SS = 4                      # supersampling for shapes and icons
 MARGIN = 12                 # gap to the taskbar and the screen edge
 POLL_MS = 100               # cross-thread calls and the "did we lose the foreground" check
 REOPEN_GUARD = 0.4          # s: a tray click that just closed the panel must not reopen it
 
-# Laid out like the reference widget's card: illustration, number and status lines on the
-# left, the battery on the right spanning them; its height follows the content
-ART = (PAD, PAD, 148, 111)  # controller illustration: x, y, w, h (120:90)
-BASELINE = 172              # big number, right under the illustration
-LINE_Y, LINE_STEP = 192, 21 # status, signal, time left: as many as there is to say
-TEXT_X = PAD + 18           # status text, right of its glyph (longest beside the icon: 121 px)
-LINK_ICON = (164, 171, 50)  # x, y, size: beside the first two lines, past the illustration's edge
+# Zones, as on the reference widget's card. Two columns: the battery on the right; on the
+# left the illustration over the info block, itself two columns (number and status lines,
+# then the link icon). Nothing stretches: the lines set the battery's foot, and the battery
+# plus the action row set the card's height (layout()).
+ART = (PAD, PAD, 140, 105)  # illustration: x, y, w, h (4:3)
+BASELINE = 156              # big number, right under the illustration
+LINE_Y, LINE_STEP = 175, 20 # status, signal, time left: as many as there is to say
+TEXT_X = PAD + 18           # status text, right of its glyph
 BAT_X = (W - PAD - 56, W - PAD)
-BTN_H, BTN_GAP = 32, 14     # action row: "Buscar mando" and "..."
+BAT_TOP = PAD + 8           # body under the nub
+LINK_GAP, TEXT_GAP = 10, 6  # link icon to the battery, text to the link icon
+LINK_SIZE = {"steam-machine": 69}   # 1.3x the reference widget's 50 (53 for the bigger drawing)
+LINK_DEFAULT = 65
+BTN_H, BTN_GAP = 32, 12     # action row: "Buscar mando" and "..."
 
 PAL = {
     "bg": "#1E2124", "border": "#383D43", "btn_off": "#272B30", "btn_off_border": "#32373D",
     "text": "#FCFCFC", "text2": "#C9CDD2", "text3": "#8B9198",
-    "outline": "#5A6068", "track": "#3A3F45", "art_fill": "#2C3035",
+    "outline": "#5A6068", "track": "#3A3F45", "art_fill": "#2C3035", "link": "#E6E7E8",
     "btn": "#30353B", "btn_hover": "#3A4047", "btn_border": "#41474E", "disabled_text": "#61676E",
 }
 # Colour of the battery fill, like the controller's LED: how it is linked, or why it needs attention
@@ -155,10 +160,26 @@ def status_lines(st, role):
 
 
 def layout(n_lines):
-    """(bottom of the content = foot of the battery, card height) for n status lines (2 at least:
-    the link icon sits beside the first two)."""
-    bottom = LINE_Y + LINE_STEP * (max(2, n_lines) - 1) + 10
+    """(foot of the battery, card height) for n status lines: the battery ends with the last
+    line (the second at least, so the link icon fits beside the number), the action row under it."""
+    bottom = LINE_Y + LINE_STEP * (max(2, n_lines) - 1) + 9
     return bottom, bottom + BTN_GAP + BTN_H + PAD
+
+
+def link_box(name, bottom):
+    """(x, y, size) of a link icon: its drawing right against the battery (less LINK_GAP) and
+    its foot level with the battery's, so it sits beside the text lines, bottom-aligned."""
+    size = LINK_SIZE.get(name, LINK_DEFAULT)
+    _, _, right, foot = _ink(name)
+    return BAT_X[0] - LINK_GAP - right * size, bottom - foot * size, size
+
+
+def text_room(name):
+    """Width the status lines may use: up to the link icon's drawing, or to the battery."""
+    if name is None:
+        return BAT_X[0] - LINK_GAP - TEXT_X
+    x, _, size = link_box(name, 0)
+    return x + _ink(name)[0] * size - TEXT_GAP - TEXT_X
 
 
 def ink_on(color):
@@ -173,6 +194,23 @@ def ink_on(color):
 def _mask(name):
     with Image.open(ASSETS / f"{name}.png") as im:
         return im.convert("L")
+
+
+@functools.cache
+def _ink(name):
+    """Drawn part of an icon (left, top, right, bottom) as fractions of its size."""
+    m = _mask(name)
+    x0, y0, x1, y1 = m.point(lambda v: 255 if v > 20 else 0).getbbox()
+    return x0 / m.width, y0 / m.height, x1 / m.width, y1 / m.height
+
+
+def _fit(line, font, room):
+    """The line, cut short with an ellipsis if it is wider than room (px)."""
+    if font.measure(line) <= room:
+        return line
+    while line and font.measure(line + "…") > room:
+        line = line[:-1]
+    return line.rstrip() + "…"
 
 
 def _family(*names):
@@ -362,9 +400,10 @@ class Panel:
             c.create_text(u(PAD) + self.f_number.measure(number) + u(1), u(BASELINE) - self.f_unit.metrics("ascent"),
                           text="%", font=self.f_unit, fill=PAL["text2"], anchor="nw")
 
+        room = u(text_room(link_icon(st)))
         for i, (_, line, ink, y) in enumerate(lines):
-            c.create_text(u(TEXT_X), u(y), text=line, font=self.f_strong if i == 0 else self.f_body,
-                          fill=ink, anchor="w")
+            f = self.f_strong if i == 0 else self.f_body
+            c.create_text(u(TEXT_X), u(y), text=_fit(line, f, room), font=f, fill=ink, anchor="w")
 
         self._buttons(app.monitor.live_path is not None)
 
@@ -375,11 +414,11 @@ class Panel:
         L.icon("steam-controller-body", *ART, PAL["art_fill"])
         L.icon("steam-controller-lines", *ART, PAL["text"] if st.connected else PAL["text3"])
 
-        # How it is linked, beside the status lines
+        # How it is linked: beside the number and the status lines, its foot on the battery's
         icon = link_icon(st)
         if icon:
-            x, y, size = LINK_ICON
-            L.icon(icon, x, y, size, size, PAL["text2"])
+            x, y, size = link_box(icon, self.bottom)
+            L.icon(icon, x, y, size, size, PAL["link"])
 
         for i, (glyph, _, ink, y) in enumerate(lines):
             if glyph == "dot":
@@ -401,7 +440,7 @@ class Panel:
         return photo
 
     def _battery(self, L, st, role):
-        (x0, x1), y0, y1 = BAT_X, PAD + 7, self.bottom    # from the illustration's top to the last line
+        (x0, x1), y0, y1 = BAT_X, BAT_TOP, self.bottom    # from the illustration's top to the last line
         cx = (x0 + x1) / 2
         L.box(cx - 11, PAD, cx + 11, PAD + 5, 1.5, PAL["outline"])                   # nub
         L.box(x0, y0, x1, y1, 5, None, PAL["outline"], 2)                             # body
