@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,12 +8,24 @@ version = "0.1.0"
 description = "Windows 11 system tray app for Steam Controller 2 battery and connection status"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE", "NOTICE.md"]
+authors = [{ name = "Vicente Zamora" }]
+keywords = ["steam-controller", "battery", "tray", "windows", "hid"]
+classifiers = [
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Hardware",
+]
 requires-python = ">=3.10"
 dependencies = [
     "hidapi>=0.14",
     "pystray>=0.19",
     "Pillow>=10",
 ]
+
+[project.urls]
+Homepage = "https://github.com/vicentzamoras/controller-windows-widget"
+Issues = "https://github.com/vicentzamoras/controller-windows-widget/issues"
 
 [project.optional-dependencies]
 dev = ["pytest", "pyinstaller", "resvg-py"]    # resvg-py: tools/import_icons.py only
