@@ -18,9 +18,12 @@ python -m venv .venv
 .\.venv\Scripts\python -m sc2tray --find ticktock
 ```
 
-- **Panel (clic izquierdo)**: nivel grande, estado y tiempo estimado, conexión,
-  señal, último dato, gráfica de las últimas 24 h y botón "Buscar mando". Se
-  cierra al hacer clic fuera o con Esc; sigue el tema claro/oscuro de Windows.
+- **Panel (clic izquierdo)**: tarjeta oscura al estilo del widget de Plasma, con
+  sus iconos: ilustración del mando, nivel grande, batería vertical del color del
+  LED (blanco puck, azul Bluetooth, verde USB-C, naranja apagado en el dock, rojo
+  batería baja), estado y tiempo estimado, y recuadros de conexión, señal (barras
+  y dBm) y dock. "Buscar mando" hace vibrar el mando; "⋯" abre las melodías y los
+  ajustes. Se cierra al hacer clic fuera o con Esc.
 - **Tooltip**: nivel, estado de carga, enlace, señal (dBm) y tiempo estimado.
 - **Menú (clic derecho)**: Buscar mando (vibración o melodía en los actuadores
   hápticos), avisos de batería baja / carga completa / desconexión, Iniciar con Windows.
@@ -52,10 +55,13 @@ no tiene consola.
 | `src/sc2tray/icons.py` | icono variante A (barra de nivel) dibujado con Pillow |
 | `src/sc2tray/tray.py` | pystray: icono, tooltip, menú, notificaciones |
 | `src/sc2tray/panel.py` | panel emergente (tkinter + Pillow) |
+| `src/sc2tray/assets/` | máscaras PNG de los iconos del panel, teñidas en tiempo de ejecución |
+| `assets/upstream/` | SVG originales del widget de Plasma (MIT) |
 | `src/sc2tray/text.py` | textos del tooltip, el menú y el panel |
 | `src/sc2tray/config.py` | ajustes, autoarranque (HKCU Run), instancia única, tema |
 | `tools/hid_probe.py` | lista las colecciones HID y muestrea reports (diagnóstico) |
 | `tools/build_exe.py` | icono de la app + PyInstaller → `dist\SC2Tray.exe` |
+| `tools/import_icons.py` | copia los SVG del repo original y los rasteriza a máscaras (resvg-py, solo desarrollo) |
 
 ## Protocolo en Windows
 

@@ -6,6 +6,11 @@ structure of the monitor loop come from
 [jahrekza/steam-controller-plasma-widget](https://github.com/jahrekza/steam-controller-plasma-widget),
 which in turn draws on SDL's `SDL_hidapi_steam_triton.c`.
 
+The panel's icons and controller illustration (`assets/upstream/*.svg`, and the
+masks rasterized from them in `src/sc2tray/assets/`) are that project's
+artwork, used unchanged apart from rasterizing; its look (dark card, vertical
+battery coloured like the controller's LED, signal bars) follows its desktop card.
+
 steam-controller-plasma-widget is distributed under the MIT License:
 
 > MIT License

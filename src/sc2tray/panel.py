@@ -1,60 +1,61 @@
-"""Flyout panel shown on left click: level, charge, link, signal and the 24 h history.
+"""Flyout panel shown on left click: the controller, its level, link, signal and dock.
 
-Tkinter, on the main thread. Shapes are drawn with Pillow (Tk's canvas has no
-antialiasing) into one background image; text stays on the canvas so it keeps
-ClearType. Other threads talk to it only through `call`.
+A dark card in the style of the reference Plasma widget, with its icons
+(assets/: alpha masks rasterized from its SVGs by tools/import_icons.py),
+tinted here. Tkinter on the main thread. Shapes and icons are composited with
+Pillow (Tk's canvas has no antialiasing) into one background image; text
+stays on the canvas so it keeps ClearType. Other threads talk to it only
+through `call`.
 """
 import ctypes
+import functools
 import queue
 import time
 import tkinter as tk
 from ctypes import wintypes
+from pathlib import Path
 from tkinter import font as tkfont
 
 from PIL import Image, ImageDraw, ImageTk
 
-from . import config, icons, text
+from . import config, text
 from . import protocol as p
-from .state import HISTORY_SPAN
 
-W, H = 360, 500             # card size in px at 96 dpi; everything below is in these units
-PAD = 20
-SS = 4                      # supersampling for the shapes
+W, H = 340, 382             # card size in px at 96 dpi; everything below is in these units
+PAD = 16
+SS = 4                      # supersampling for shapes and icons
 MARGIN = 12                 # gap to the taskbar and the screen edge
 POLL_MS = 100               # cross-thread calls and the "did we lose the foreground" check
 REOPEN_GUARD = 0.4          # s: a tray click that just closed the panel must not reopen it
-CHART_MIN_SPAN = 1800       # s of history before the chart is drawn (less is a sliver at the edge)
 
-HEAD_Y = 33                 # centre of the title row
-BASELINE = 110              # baseline of the big number
-BAR_Y = 128                 # level bar, 10 tall
-STATUS_Y = 158
-ROWS_Y = 188                # three 40 px rows
-CHART_HEAD_Y = 336
-CHART_Y = 352               # chart, 64 tall: lines at +4, +32, +60
-BTN_Y = 436                 # buttons, 44 tall
-MORE_X = W - PAD - 44
+HEAD_Y = 25                 # centre of the title row
+MORE = (W - PAD - 28, 11, W - PAD, 39)          # "..." button
+ART = (PAD, 50, 128, 96)                        # controller illustration: x, y, w, h (120:90)
+BASELINE = 196              # big number
+LINK_ICON = (196, 150, 48)                      # x, y, size
+LINE1_Y, LINE2_Y = 218, 240
+BATTERY = (W - PAD - 52, 58, W - PAD, 250)      # body; the nub sits on top
+TILES_Y, TILE_H, TILE_GAP = 266, 52, 8
+TILE_W = (136, 100, 56)     # connection, signal, dock
+FIND = (PAD, 330, W - PAD, 366)
 
-DARK = {
-    "bg": "#202020", "border": "#3F3F3F", "text": "#FFFFFF", "text2": "#E0E0E0", "text3": "#A8A8A8",
-    "unit": "#C5C5C5", "line": "#333333", "track": "#3A3A3A", "chip": "#2D2D2D", "chip_border": "#454545",
-    "bar_off": "#4A4A4A", "neutral": "#E6E6E6", "off": "#8A8A8A", "off_num": "#9E9E9E",
-    "accent": "#4CC2FF", "accent_hover": "#47B1E8", "on_accent": "#0B1A24", "low": "#FFB454",
-    "btn": "#2D2D2D", "btn_hover": "#383838", "disabled": "#333333", "disabled_text": "#7A7A7A",
+PAL = {
+    "bg": "#1E2124", "border": "#383D43", "tile": "#272B30", "tile_border": "#32373D",
+    "text": "#FCFCFC", "text2": "#C9CDD2", "text3": "#8B9198",
+    "outline": "#5A6068", "track": "#3A3F45", "art_fill": "#2C3035",
+    "btn": "#30353B", "btn_hover": "#3A4047", "btn_border": "#41474E", "disabled_text": "#61676E",
 }
-LIGHT = {
-    "bg": "#F9F9F9", "border": "#D6D6D6", "text": "#1A1A1A", "text2": "#3B3B3B", "text3": "#616161",
-    "unit": "#5C5C5C", "line": "#E5E5E5", "track": "#E0E0E0", "chip": "#FFFFFF", "chip_border": "#D6D6D6",
-    "bar_off": "#C8C8C8", "neutral": "#3B3B3B", "off": "#9A9A9A", "off_num": "#8A8A8A",
-    "accent": "#005FB8", "accent_hover": "#1A6FC0", "on_accent": "#FFFFFF", "low": "#B35900",
-    "btn": "#FFFFFF", "btn_hover": "#F3F3F3", "disabled": "#E5E5E5", "disabled_text": "#9A9A9A",
-}
+# Colour of the battery fill, like the controller's LED: how it is linked, or why it needs attention
+STATE = {"puck": "#FCFCFC", "bluetooth": "#3DAEE9", "usb": "#3EC47A", "dock": "#FF9A3C",
+         "low": "#ED4C4C", "off": "#5A6068"}
+
+ASSETS = Path(__file__).with_name("assets")
 
 user32 = ctypes.windll.user32
 dwmapi = ctypes.windll.dwmapi
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
 DWMWA_BORDER_COLOR = 34
-DWMWCP_ROUND = 2
+DWMWCP_ROUNDSMALL = 3
 MONITOR_DEFAULTTONEAREST = 2
 
 
@@ -77,11 +78,11 @@ user32.TrackPopupMenuEx.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_int,
 user32.DestroyMenu.argtypes = [wintypes.HMENU]
 
 MF_GRAYED, MF_CHECKED, MF_POPUP, MF_SEPARATOR = 0x1, 0x8, 0x10, 0x800
-TPM_RIGHTALIGN, TPM_BOTTOMALIGN, TPM_VERTICAL, TPM_RETURNCMD = 0x8, 0x20, 0x40, 0x100
+TPM_RIGHTALIGN, TPM_VERTICAL, TPM_RETURNCMD = 0x8, 0x40, 0x100
 
 
 def popup_menu(owner, entries, x, y, exclude):
-    """Shows a native menu with its bottom-right corner at (x, y), keeping clear
+    """Shows a native menu with its top-right corner at (x, y), keeping clear
     of `exclude` (a RECT), and runs the chosen entry's action.
 
     Native like pystray's, so it takes the same dark/light menu theme; Tk draws
@@ -108,7 +109,7 @@ def popup_menu(owner, entries, x, y, exclude):
     menu = build(entries)
     params = TPMPARAMS(ctypes.sizeof(TPMPARAMS), exclude)
     try:
-        cmd = user32.TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_BOTTOMALIGN | TPM_VERTICAL,
+        cmd = user32.TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_VERTICAL,
                                       x, y, owner, ctypes.byref(params))
     finally:
         user32.DestroyMenu(menu)    # submenus too
@@ -118,36 +119,75 @@ def popup_menu(owner, entries, x, y, exclude):
 
 # --- what to show (pure, tested) ------------------------------------------------
 
-def tone(st, low_threshold):
-    """Colour role of the number, bar and chart."""
-    kind = icons.kind_of(st, low_threshold)
-    if kind == icons.OFF:
-        return "off"
-    if kind == icons.LOW:
+def state_role(st, low_threshold):
+    """Key of STATE for the battery fill, the status dot and the big number."""
+    if not st.connected:
+        return "dock" if st.docked else "off"
+    if not st.charging and 0 <= st.battery_pct <= low_threshold:
         return "low"
-    return "accent" if kind in (icons.CHARGING, icons.FULL, icons.DOCK) else "neutral"
+    return {"usb": "usb", "bluetooth": "bluetooth"}.get(st.connection, "puck")
 
 
-def chart_points(history, now, current=None):
-    """History as (x, y) in 0..1 (x: 24 h ago -> now, y: 0 % -> 100 %), oldest first.
-
-    `current` (the live level) extends the line to "now". Empty while there is
-    too little history to draw.
-    """
-    pts = [((t - now) / HISTORY_SPAN + 1, pct / 100) for t, pct, _ in history if now - t <= HISTORY_SPAN]
-    if current is not None and current >= 0:
-        pts.append((1.0, current / 100))
-    if len(pts) < 2 or (pts[-1][0] - pts[0][0]) * HISTORY_SPAN < CHART_MIN_SPAN:
-        return []
-    return pts
+def link_icon(st):
+    """Asset showing how the pad is linked, or None."""
+    if not st.connected:
+        return "puck" if st.docked else None
+    if st.connection == "receiver":
+        return "steam-machine" if st.internal else "puck"
+    return {"bluetooth": "bluetooth", "usb": "usb-c"}.get(st.connection)
 
 
-# --- the window -----------------------------------------------------------------
+def charging(st):
+    """Bolt on the battery: charging awake, or switched off on the dock."""
+    return not st.charged and (st.charging or (st.docked and not st.connected))
+
+
+def ink_on(color):
+    """Dark ink on a light fill, white on a dark one (as the reference widget's bolt)."""
+    r, g, b = (int(color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    return "#23262A" if 0.299 * r + 0.587 * g + 0.114 * b > 0.6 else "#FCFCFC"
+
+
+# --- drawing helpers --------------------------------------------------------------
+
+@functools.cache
+def _mask(name):
+    with Image.open(ASSETS / f"{name}.png") as im:
+        return im.convert("L")
+
 
 def _family(*names):
     have = set(tkfont.families())
     return next((n for n in names if n in have), "Segoe UI")
 
+
+class Layer:
+    """A supersampled RGBA image addressed in card units."""
+
+    def __init__(self, w, h, scale, fill=(0, 0, 0, 0)):
+        self.k = scale * SS
+        self.img = Image.new("RGBA", (round(w * self.k), round(h * self.k)), fill)
+        self.draw = ImageDraw.Draw(self.img)
+
+    def r(self, *v):
+        return [x * self.k for x in v]
+
+    def box(self, x0, y0, x1, y1, radius, fill, outline=None, width=1):
+        self.draw.rounded_rectangle(self.r(x0, y0, x1, y1), radius=radius * self.k, fill=fill,
+                                    outline=outline, width=round(width * self.k) if outline else 0)
+
+    def icon(self, name, x, y, w, h, color):
+        m = _mask(name).resize((round(w * self.k), round(h * self.k)), Image.LANCZOS)
+        ink = Image.new("RGBA", m.size, color)
+        ink.putalpha(m)
+        self.img.alpha_composite(ink, (round(x * self.k), round(y * self.k)))
+
+    def photo(self):
+        size = (round(self.img.width / SS), round(self.img.height / SS))
+        return ImageTk.PhotoImage(self.img.resize(size, Image.LANCZOS))
+
+
+# --- the window -----------------------------------------------------------------
 
 class Panel:
     def __init__(self, app):
@@ -158,14 +198,14 @@ class Panel:
         self.root.attributes("-topmost", True)
         self.root.title("SC2Tray")
         self.s = self.root.winfo_fpixels("1i") / 96
-        self.canvas = tk.Canvas(self.root, width=self.u(W), height=self.u(H), highlightthickness=0, bd=0)
+        self.canvas = tk.Canvas(self.root, width=self.u(W), height=self.u(H), highlightthickness=0, bd=0,
+                                bg=PAL["bg"])
         self.canvas.pack()
-        self.pal = DARK
         self.visible = False
         self._active = False        # has had the foreground since it was shown
         self._hidden_at = 0
         self._menu_open = False
-        self._images = {}
+        self._images = {}           # Tk keeps no reference of its own
         self._calls = queue.Queue()
         self._fonts()
         self.root.bind("<Escape>", lambda e: self.hide())
@@ -179,11 +219,12 @@ class Panel:
         semi = _family("Segoe UI Variable Text Semibold", "Segoe UI Semibold")
         display = _family("Segoe UI Variable Display Semib", "Segoe UI Semibold")
         px = lambda family, size: tkfont.Font(family=family, size=-self.u(size))
-        self.f_title = px(semi, 16)
+        self.f_title = px(semi, 14)
+        self.f_label = px(semi, 10)
         self.f_small = px(text_f, 12)
-        self.f_body = px(text_f, 14)
-        self.f_button = px(semi, 14)
-        self.f_number = px(display, 48)
+        self.f_body = px(text_f, 13)
+        self.f_strong = px(semi, 13)
+        self.f_number = px(display, 44)
         self.f_unit = px(text_f, 20)
 
     # --- threading -------------------------------------------------------
@@ -226,7 +267,6 @@ class Panel:
             self.show()
 
     def show(self):
-        self.pal = LIGHT if config.apps_use_light() else DARK
         self.render()
         x, y = self._position()
         self.root.geometry(f"{self.u(W)}x{self.u(H)}+{x}+{y}")
@@ -244,6 +284,8 @@ class Panel:
             self.visible = False
             self._hidden_at = time.monotonic()
             self.root.withdraw()
+            self.canvas.delete("all")
+            self._images.clear()    # nothing of the card stays in memory while hidden
 
     def _position(self):
         """Bottom-right of the work area of the screen under the cursor (where the tray was clicked)."""
@@ -257,10 +299,10 @@ class Panel:
         return x, y
 
     def _decorate(self):
-        """Windows 11 rounded corners and a hairline border."""
-        border = int(self.pal["border"][1:], 16)
+        """Windows 11's small corner radius and a hairline border (DWM keeps the shadow)."""
+        border = int(PAL["border"][1:], 16)
         colorref = ctypes.c_uint((border & 0xFF) << 16 | (border & 0xFF00) | border >> 16)
-        corner = ctypes.c_int(DWMWCP_ROUND)
+        corner = ctypes.c_int(DWMWCP_ROUNDSMALL)
         try:
             dwmapi.DwmSetWindowAttribute(self.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ctypes.byref(corner), 4)
             dwmapi.DwmSetWindowAttribute(self.hwnd, DWMWA_BORDER_COLOR, ctypes.byref(colorref), 4)
@@ -274,147 +316,146 @@ class Panel:
             self.render()
 
     def render(self):
-        app, pal, c = self.app, self.pal, self.canvas
+        app, c, u = self.app, self.canvas, self.u
         st = app.state
         low = app.cfg["low_threshold"]
-        role = tone(st, low)
-        color = pal[role]
-        awake = app.monitor.live_path is not None
-        chip = text.chip(st)
-        signal = text.signal(st)
+        role = state_role(st, low)
+        color = STATE[role]
         bars = p.signal_bars(st.signal_dbm) if st.signal_dbm is not None else 0
-        pts = chart_points(app.monitor.history(), time.time(), st.battery_pct if st.connected else None)
 
         c.delete("all")
-        bg = self._background(pal, color, st.battery_pct, chip, signal, bars, pts)
-        c.create_image(0, 0, image=bg, anchor="nw")
-        u = self.u
+        c.create_image(0, 0, image=self._background(st, role, bars), anchor="nw")
 
-        c.create_text(u(PAD), u(HEAD_Y), text="Steam Controller 2", font=self.f_title, fill=pal["text"], anchor="w")
-        c.create_text(u(W - PAD - 11), u(HEAD_Y), text=chip, font=self.f_small, fill=pal["text2"], anchor="e")
+        c.create_text(u(PAD), u(HEAD_Y), text="Steam Controller 2", font=self.f_title, fill=PAL["text"], anchor="w")
 
         number = str(st.battery_pct) if st.battery_pct >= 0 else "—"
-        num_color = pal["off_num"] if role == "off" else pal["text"] if role == "neutral" else color
-        top = u(BASELINE) - self.f_number.metrics("ascent")
-        c.create_text(u(PAD), top, text=number, font=self.f_number, fill=num_color, anchor="nw")
-        c.create_text(u(PAD) + self.f_number.measure(number) + u(10), u(BASELINE) - self.f_unit.metrics("ascent"),
-                      text="%", font=self.f_unit, fill=pal["unit"], anchor="nw")
-        low_now = st.connected and 0 <= st.battery_pct <= low
-        c.create_text(u(PAD), u(STATUS_Y), text=text.panel_status(st, low_now), font=self.f_body,
-                      fill=pal["text2"], anchor="w")
+        num_color = STATE["low"] if role == "low" else PAL["text3"] if role == "off" else PAL["text"]
+        c.create_text(u(PAD), u(BASELINE) - self.f_number.metrics("ascent"), text=number, font=self.f_number,
+                      fill=num_color, anchor="nw")
+        if st.battery_pct >= 0:
+            c.create_text(u(PAD) + self.f_number.measure(number) + u(3), u(BASELINE) - self.f_unit.metrics("ascent"),
+                          text="%", font=self.f_unit, fill=PAL["text2"], anchor="nw")
 
-        rows = [("Conexión", text.link(st)), ("Señal", signal), ("Último dato", st.last_seen or "—")]
-        for i, (label, value) in enumerate(rows):
-            y = u(ROWS_Y + 40 * i + 20)
-            c.create_text(u(PAD), y, text=label, font=self.f_body, fill=pal["text3"], anchor="w")
-            c.create_text(u(W - PAD), y, text=value, font=self.f_body, fill=pal["text"], anchor="e")
+        c.create_text(u(PAD + 18), u(LINE1_Y), text=text.headline(st, role == "low"), font=self.f_strong,
+                      fill=PAL["text3"] if role == "off" else color, anchor="w")
+        detail = text.detail(st)
+        if detail:
+            c.create_text(u(PAD + 18), u(LINE2_Y), text=detail[1], font=self.f_body, fill=PAL["text3"], anchor="w")
 
-        c.create_text(u(PAD), u(CHART_HEAD_Y), text="Últimas 24 h", font=self.f_small, fill=pal["text3"], anchor="w")
-        c.create_text(u(W - PAD), u(CHART_HEAD_Y), text="ahora", font=self.f_small, fill=pal["text3"], anchor="e")
-        if not pts:
-            c.create_text(u(W / 2), u(CHART_Y + 32), text="Recopilando historial…", font=self.f_small,
-                          fill=pal["text3"])
+        # Tiles: caption, then the value right of its icon (drawn in _background)
+        tiles = [("CONEXIÓN", text.link(st), 20 if link_icon(st) else 0), ("SEÑAL", text.signal(st), 21),
+                 ("DOCK", text.dock(st), 15 if st.docked else 0)]
+        x = PAD
+        for (label, value, indent), w in zip(tiles, TILE_W):
+            c.create_text(u(x + 10), u(TILES_Y + 16), text=label, font=self.f_label, fill=PAL["text3"], anchor="w")
+            muted = value in ("—", "Sin conexión", "No")
+            c.create_text(u(x + 10 + indent), u(TILES_Y + 36), text=value, font=self.f_strong, anchor="w",
+                          fill=PAL["text3"] if muted else PAL["text"])
+            x += w + TILE_GAP
 
-        self._buttons(awake)
+        self._buttons(app.monitor.live_path is not None)
 
-    def _layer(self):
-        s = self.s * SS
-        img = Image.new("RGBA", (round(W * s), round(H * s)), (0, 0, 0, 0))
-        return img, ImageDraw.Draw(img), (lambda *v: [x * s for x in v])
+    def _background(self, st, role, bars):
+        L = Layer(W, H, self.s, PAL["bg"])
+        color = STATE[role]
 
-    def _finish(self, img, key):
-        photo = ImageTk.PhotoImage(img.resize((self.u(img.width / self.s / SS), self.u(img.height / self.s / SS)),
-                                              Image.LANCZOS))
-        self._images[key] = photo   # Tk keeps no reference of its own
+        # Controller illustration: body fill under the line art
+        L.icon("steam-controller-body", *ART, PAL["art_fill"])
+        L.icon("steam-controller-lines", *ART, PAL["text"] if st.connected else PAL["text3"])
+
+        # How it is linked, next to the number
+        icon = link_icon(st)
+        if icon:
+            x, y, size = LINK_ICON
+            L.icon(icon, x, y, size, size, PAL["text2"])
+
+        # Status lines: dot or bolt in the state colour, then hourglass or clock
+        dot = PAL["text3"] if role == "off" else color
+        if charging(st):
+            L.icon("bolt", PAD, LINE1_Y - 7, 14, 14, dot)
+        else:
+            L.draw.ellipse(L.r(PAD + 3, LINE1_Y - 4, PAD + 11, LINE1_Y + 4), fill=dot)
+        detail = text.detail(st)
+        if detail:
+            L.icon(detail[0], PAD + 1, LINE2_Y - 6, 12, 12, PAL["text3"])
+
+        self._battery(L, st, role)
+
+        # Tiles: connection, signal, dock
+        x = PAD
+        for i, w in enumerate(TILE_W):
+            L.box(x, TILES_Y, x + w, TILES_Y + TILE_H, 3, PAL["tile"], PAL["tile_border"])
+            vy = TILES_Y + 36
+            if i == 0 and icon:
+                L.icon(icon, x + 10, vy - 8, 16, 16, PAL["text2"])
+            elif i == 1:
+                for b in range(4):     # rising bars, the weakest level in red
+                    h = 4 + 3 * b
+                    lit = bars > b
+                    ink = (STATE["low"] if bars == 1 else PAL["text"]) if lit else PAL["track"]
+                    L.box(x + 10 + 4.5 * b, vy + 6 - h, x + 13 + 4.5 * b, vy + 6, 0.8, ink)
+            elif i == 2 and st.docked:
+                L.icon("bolt", x + 8, vy - 6, 12, 12, color if charging(st) else PAL["text2"])
+            x += w + TILE_GAP
+
+        photo = L.photo()
+        self._images["bg"] = photo
         return photo
 
-    def _background(self, pal, color, pct, chip, signal, bars, pts):
-        s = self.s * SS
-        img, d, r = self._layer()
-        d.rectangle(r(0, 0, W, H), fill=pal["bg"])
-        line = max(1, round(s))
-
-        # Connection chip, right of the title
-        cw = (self.f_small.measure(chip) / self.s) + 10 + 12 + 6 + 10
-        x1, x0 = W - PAD, W - PAD - cw
-        d.rounded_rectangle(r(x0, HEAD_Y - 12, x1, HEAD_Y + 12), radius=12 * s, fill=pal["chip"],
-                            outline=pal["chip_border"], width=line)
-        cx = x0 + 10 + 6
-        d.ellipse(r(cx - 4.7, HEAD_Y - 4.7, cx + 4.7, HEAD_Y + 4.7), outline=pal["text2"], width=round(1.5 * s))
-        d.ellipse(r(cx - 1.5, HEAD_Y - 1.5, cx + 1.5, HEAD_Y + 1.5), fill=pal["text2"])
-
-        # Level bar
-        d.rounded_rectangle(r(PAD, BAR_Y, W - PAD, BAR_Y + 10), radius=5 * s, fill=pal["track"])
-        if pct > 0:
-            d.rounded_rectangle(r(PAD, BAR_Y, PAD + max(10, (W - 2 * PAD) * pct / 100), BAR_Y + 10),
-                                radius=5 * s, fill=color)
-
-        # Row separators
-        for i in range(4):
-            y = ROWS_Y + 40 * i
-            d.rectangle([PAD * s, y * s, (W - PAD) * s, y * s + line - 1], fill=pal["line"])
-
-        # Signal bars, left of the dBm text
-        bx = W - PAD - self.f_body.measure(signal) / self.s - 10 - 22
-        by = ROWS_Y + 40 + 20 - 7
-        for i in range(4):
-            h = 4 + 3 * i
-            d.rounded_rectangle(r(bx + 6 * i, by + 14 - h, bx + 6 * i + 4, by + 14), radius=1 * s,
-                                fill=pal["text"] if bars > i else pal["bar_off"])
-
-        # 24 h chart
-        for dy in (4, 32, 60):
-            d.rectangle([PAD * s, (CHART_Y + dy) * s, (W - PAD) * s, (CHART_Y + dy) * s + line - 1], fill=pal["line"])
-        if pts:
-            xy = [((PAD + x * (W - 2 * PAD)) * s, (CHART_Y + 60 - y * 56) * s) for x, y in pts]
-            area = Image.new("RGBA", img.size, (0, 0, 0, 0))
-            rgb = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
-            ImageDraw.Draw(area).polygon(xy + [(xy[-1][0], (CHART_Y + 64) * s), (xy[0][0], (CHART_Y + 64) * s)],
-                                         fill=rgb + (41,))
-            img.alpha_composite(area)
-            d.line(xy, fill=color, width=round(2 * s), joint="curve")
-            for x, y in (xy[0], xy[-1]):
-                d.ellipse([x - s, y - s, x + s, y + s], fill=color)
-
-        return self._finish(img, "bg")
+    def _battery(self, L, st, role):
+        x0, y0, x1, y1 = BATTERY
+        cx = (x0 + x1) / 2
+        L.box(cx - 11, y0 - 7, cx + 11, y0 - 2, 1.5, PAL["outline"])                 # nub
+        L.box(x0, y0, x1, y1, 5, None, PAL["outline"], 2)                             # body
+        inset = 5
+        full = (y1 - y0) - 2 * inset
+        top = y1 - inset - full * max(0, min(100, st.battery_pct)) / 100
+        if st.battery_pct > 0:
+            L.box(x0 + inset, top, x1 - inset, y1 - inset, 2.5, STATE[role])
+        if charging(st):
+            mid = (y0 + y1) / 2
+            ink = ink_on(STATE[role]) if top < mid - 10 else PAL["text"]
+            L.icon("bolt", cx - 10, mid - 10, 20, 20, ink)
 
     # --- buttons ---------------------------------------------------------
 
-    def _button_image(self, w, fill, outline, glyph, glyph_color, key):
-        s = self.s * SS
-        img = Image.new("RGBA", (round(w * s), round(44 * s)), self.pal["bg"])
-        d = ImageDraw.Draw(img)
-        d.rounded_rectangle([0, 0, img.width - 1, img.height - 1], radius=6 * s, fill=fill,
-                            outline=outline, width=max(1, round(s)) if outline else 0)
-        if glyph == "more":
-            for gx in (-7, 0, 7):
-                cx, cy = (w / 2 + gx) * s, 22 * s
-                d.ellipse([cx - 1.4 * s, cy - 1.4 * s, cx + 1.4 * s, cy + 1.4 * s], fill=glyph_color)
-        else:   # magnifier, left of the label (gx = its centre)
-            gx = glyph
-            d.ellipse([(gx - 5) * s, (22 - 5) * s, (gx + 3) * s, (22 + 3) * s], outline=glyph_color, width=round(1.4 * s))
-            d.line([(gx + 2.3) * s, (22 + 2.3) * s, (gx + 5.5) * s, (22 + 5.5) * s], fill=glyph_color, width=round(1.6 * s))
-        return self._finish(img, key)
+    def _button(self, w, h, fill, outline, draw_glyph, key):
+        L = Layer(w, h, self.s, PAL["bg"])
+        L.box(0, 0, w - 1 / L.k, h - 1 / L.k, 3, fill, outline)
+        draw_glyph(L)
+        photo = L.photo()
+        self._images[key] = photo
+        return photo
 
     def _buttons(self, awake):
-        pal, c, u = self.pal, self.canvas, self.u
-        fw = MORE_X - 8 - PAD
+        c, u = self.canvas, self.u
+        fx0, fy0, fx1, fy1 = FIND
+        fw, fh = fx1 - fx0, fy1 - fy0
         label = "Buscar mando"
-        content = 16 + 8 + self.f_button.measure(label) / self.s
-        gx = fw / 2 - content / 2 + 8
+        gx = fw / 2 - (16 + 8 + self.f_strong.measure(label) / self.s) / 2
+        ink = PAL["text"] if awake else PAL["disabled_text"]
+        locate = lambda L: L.icon("locate", gx, fh / 2 - 8, 16, 16, ink)
         if awake:
-            normal = self._button_image(fw, pal["accent"], None, gx, pal["on_accent"], "find")
-            hover = self._button_image(fw, pal["accent_hover"], None, gx, pal["on_accent"], "find_hover")
+            find_n = self._button(fw, fh, PAL["btn"], PAL["btn_border"], locate, "find")
+            find_h = self._button(fw, fh, PAL["btn_hover"], PAL["btn_border"], locate, "find_hover")
         else:
-            normal = hover = self._button_image(fw, pal["disabled"], None, gx, pal["disabled_text"], "find")
-        find = c.create_image(u(PAD), u(BTN_Y), image=normal, anchor="nw", tags=("find",))
-        c.create_text(u(PAD + gx + 8 + 8), u(BTN_Y + 22), text=label, font=self.f_button, anchor="w",
-                      fill=pal["on_accent"] if awake else pal["disabled_text"], tags=("find",))
-        more_n = self._button_image(44, pal["btn"], pal["chip_border"], "more", pal["text"], "more")
-        more_h = self._button_image(44, pal["btn_hover"], pal["chip_border"], "more", pal["text"], "more_hover")
-        more = c.create_image(u(MORE_X), u(BTN_Y), image=more_n, anchor="nw", tags=("more",))
+            find_n = find_h = self._button(fw, fh, PAL["tile"], PAL["tile_border"], locate, "find")
+        find = c.create_image(u(fx0), u(fy0), image=find_n, anchor="nw", tags=("find",))
+        c.create_text(u(fx0 + gx + 24), u(fy0 + fh / 2), text=label, font=self.f_strong, anchor="w",
+                      fill=ink, tags=("find",))
 
-        for tag, item, n, h, action in (("find", find, normal, hover, self._find if awake else None),
+        mx0, my0, mx1, my1 = MORE
+        mw, mh = mx1 - mx0, my1 - my0
+
+        def dots(L):
+            for dx in (-6, 0, 6):
+                L.draw.ellipse(L.r(mw / 2 + dx - 1.3, mh / 2 - 1.3, mw / 2 + dx + 1.3, mh / 2 + 1.3), fill=PAL["text2"])
+
+        more_n = self._button(mw, mh, PAL["bg"], None, dots, "more")
+        more_h = self._button(mw, mh, PAL["btn_hover"], None, dots, "more_hover")
+        more = c.create_image(u(mx0), u(my0), image=more_n, anchor="nw", tags=("more",))
+
+        for tag, item, n, h, action in (("find", find, find_n, find_h, self._find if awake else None),
                                         ("more", more, more_n, more_h, self._more)):
             if action is None:
                 continue
@@ -434,11 +475,12 @@ class Panel:
                    ("Iniciar con Windows", app.toggle_autostart, config.autostart_enabled(), True),
                    None,
                    ("Salir", app.quit, False, True)]
-        x0, y0 = self.root.winfo_rootx() + self.u(MORE_X), self.root.winfo_rooty() + self.u(BTN_Y)
-        button = wintypes.RECT(x0, y0, x0 + self.u(44), y0 + self.u(44))
+        mx0, my0, mx1, my1 = (self.u(v) for v in MORE)
+        x0, y0 = self.root.winfo_rootx(), self.root.winfo_rooty()
+        button = wintypes.RECT(x0 + mx0, y0 + my0, x0 + mx1, y0 + my1)
         self._menu_open = True
         try:
-            popup_menu(self.hwnd, entries, button.right, button.top - self.u(4), button)
+            popup_menu(self.hwnd, entries, button.right, button.bottom + self.u(4), button)
         finally:
             self._menu_open = False
             if self.visible:

@@ -60,10 +60,6 @@ class Monitor(threading.Thread):
     def state(self):
         return self._published or replace(self._st)
 
-    def history(self):
-        """[time, %, charging] points of the last 24 h (a copy: safe from any thread)."""
-        return list(self._tracker.history)
-
     def stop(self):
         self._stop.set()
 

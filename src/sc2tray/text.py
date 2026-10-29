@@ -51,38 +51,42 @@ def tooltip(st):
 
 # --- panel -------------------------------------------------------------------
 
-def chip(st):
-    if st.docked:
-        return "En el dock"
-    return connection_label(st) if st.connected else "Sin conexión"
+def headline(st, low):
+    """First status line; `low` = the level is at or below the warning threshold."""
+    if not st.connected:
+        return "Apagado en el dock" if st.docked else status(st)
+    if st.provisional or st.battery_pct < 0:
+        return "Leyendo batería…"
+    if st.charged:
+        return "Cargado"
+    if st.charging:
+        return "Cargando"
+    return "Batería baja — conéctalo" if low else "Conectado"
+
+
+def detail(st):
+    """Second status line as (icon, text), or None: time left, or how old the reading is."""
+    if st.connected and not st.provisional and st.eta_min is not None:
+        return "hourglass", (f"Lleno en ~{duration(st.eta_min)}" if st.charging
+                             else f"Quedan ~{duration(st.eta_min)}")
+    if not st.connected and st.battery_pct >= 0:
+        return "clock", "Último valor conocido" + (f" · {st.last_seen}" if st.last_seen else "")
+    if st.connected and st.last_seen:
+        return "clock", f"Actualizado a las {st.last_seen}"
+    return None
 
 
 def link(st):
-    if st.connection == "receiver":
-        if st.internal:
-            return "Steam Machine"
-        return "Puck · en el dock" if st.docked else "Puck (receptor)"
-    if st.connection == "bluetooth":
-        return "Bluetooth · en el dock" if st.docked else "Bluetooth"
-    return "USB-C (cable)" if st.connection == "usb" else "—"
+    if st.connected:
+        return connection_label(st)
+    return "Puck" if st.docked else "Sin conexión"
 
 
 def signal(st):
-    if st.signal_dbm is None:
-        return "sin lectura"
-    return f"{st.signal_dbm} dBm".replace("-", "−")
+    return f"{st.signal_dbm} dBm".replace("-", "−") if st.signal_dbm is not None else "—"
 
 
-def panel_status(st, low):
-    """The line under the level bar; `low` = the level is at or below the warning threshold."""
-    if not st.connected:
-        if st.docked:
-            return "Apagado en el dock · cargando"
-        return "Desconectado · último valor conocido" if st.battery_pct >= 0 else status(st)
-    if st.provisional or st.battery_pct < 0:
-        return "Leyendo batería…"
-    state = ("Cargado" if st.charged else "Cargando" if st.charging
-             else "Batería baja" if low else "Con batería")
-    if st.eta_min is None:
-        return state
-    return f"{state} · " + (f"lleno en ~{duration(st.eta_min)}" if st.charging else f"quedan ~{duration(st.eta_min)}")
+def dock(st):
+    if not st.receiver:
+        return "—"          # only the puck can tell
+    return "Sí" if st.docked else "No"

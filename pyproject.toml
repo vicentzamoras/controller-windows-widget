@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pyinstaller"]
+dev = ["pytest", "pyinstaller", "resvg-py"]    # resvg-py: tools/import_icons.py only
 
 [project.scripts]
 sc2tray-cli = "sc2tray.__main__:main"
@@ -26,6 +26,9 @@ sc2tray = "sc2tray.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+sc2tray = ["assets/*.png"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

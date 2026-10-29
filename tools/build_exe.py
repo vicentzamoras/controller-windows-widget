@@ -42,6 +42,7 @@ def main():
         "--icon", str(ico),
         "--paths", str(ROOT / "src"),
         "--hidden-import", "pystray._win32",     # pystray picks its backend at runtime
+        "--add-data", f"{ROOT / 'src' / 'sc2tray' / 'assets'};sc2tray/assets",   # the panel's icon masks
         "--distpath", str(ROOT / "dist"),
         "--workpath", str(BUILD / "pyinstaller"),
         "--specpath", str(BUILD),
