@@ -63,9 +63,57 @@ class MONITORINFO(ctypes.Structure):
                 ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
 
 
+class TPMPARAMS(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("rcExclude", wintypes.RECT)]
+
+
 user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
 user32.MonitorFromPoint.restype = wintypes.HMONITOR
 user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFO)]
+user32.CreatePopupMenu.restype = wintypes.HMENU
+user32.AppendMenuW.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_size_t, wintypes.LPCWSTR]
+user32.TrackPopupMenuEx.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_int, ctypes.c_int,
+                                    wintypes.HWND, ctypes.POINTER(TPMPARAMS)]
+user32.DestroyMenu.argtypes = [wintypes.HMENU]
+
+MF_GRAYED, MF_CHECKED, MF_POPUP, MF_SEPARATOR = 0x1, 0x8, 0x10, 0x800
+TPM_RIGHTALIGN, TPM_BOTTOMALIGN, TPM_VERTICAL, TPM_RETURNCMD = 0x8, 0x20, 0x40, 0x100
+
+
+def popup_menu(owner, entries, x, y, exclude):
+    """Shows a native menu with its bottom-right corner at (x, y), keeping clear
+    of `exclude` (a RECT), and runs the chosen entry's action.
+
+    Native like pystray's, so it takes the same dark/light menu theme; Tk draws
+    its own menus and ignores it. Entries: None (separator) or
+    (label, action or list of entries, checked, enabled).
+    """
+    actions = []
+
+    def build(items):
+        menu = user32.CreatePopupMenu()
+        for item in items:
+            if item is None:
+                user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
+                continue
+            label, target, checked, enabled = item
+            flags = (MF_CHECKED if checked else 0) | (0 if enabled else MF_GRAYED)
+            if isinstance(target, list):
+                user32.AppendMenuW(menu, flags | MF_POPUP, build(target), label)
+            else:
+                actions.append(target)
+                user32.AppendMenuW(menu, flags, len(actions), label)
+        return menu
+
+    menu = build(entries)
+    params = TPMPARAMS(ctypes.sizeof(TPMPARAMS), exclude)
+    try:
+        cmd = user32.TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_BOTTOMALIGN | TPM_VERTICAL,
+                                      x, y, owner, ctypes.byref(params))
+    finally:
+        user32.DestroyMenu(menu)    # submenus too
+    if cmd:
+        actions[cmd - 1]()
 
 
 # --- what to show (pure, tested) ------------------------------------------------
@@ -380,27 +428,18 @@ class Panel:
     def _more(self):
         app, cfg = self.app, self.app.cfg
         awake = app.monitor.live_path is not None
-        m = tk.Menu(self.root, tearoff=0)
-        tunes = tk.Menu(m, tearoff=0)
-        for name, label in app.MELODIES:
-            tunes.add_command(label=label, command=lambda n=name: app.find(n))
-        m.add_cascade(label="Buscar con melodía", menu=tunes, state="normal" if awake else "disabled")
-        m.add_separator()
-        self._vars = []
-        for key, label in app.toggles():
-            var = tk.BooleanVar(value=cfg[key])
-            self._vars.append(var)
-            m.add_checkbutton(label=label, variable=var, command=lambda k=key: cfg.toggle(k))
-        auto = tk.BooleanVar(value=config.autostart_enabled())
-        self._vars.append(auto)
-        m.add_checkbutton(label="Iniciar con Windows", variable=auto, command=app.toggle_autostart)
-        m.add_separator()
-        m.add_command(label="Salir", command=app.quit)
+        tunes = [(label, lambda n=name: app.find(n), False, True) for name, label in app.MELODIES]
+        entries = [("Buscar con melodía", tunes, False, awake), None,
+                   *[(label, lambda k=key: cfg.toggle(k), cfg[key], True) for key, label in app.toggles()],
+                   ("Iniciar con Windows", app.toggle_autostart, config.autostart_enabled(), True),
+                   None,
+                   ("Salir", app.quit, False, True)]
+        x0, y0 = self.root.winfo_rootx() + self.u(MORE_X), self.root.winfo_rooty() + self.u(BTN_Y)
+        button = wintypes.RECT(x0, y0, x0 + self.u(44), y0 + self.u(44))
         self._menu_open = True
         try:
-            m.tk_popup(self.root.winfo_rootx() + self.u(MORE_X), self.root.winfo_rooty() + self.u(BTN_Y))
+            popup_menu(self.hwnd, entries, button.right, button.top - self.u(4), button)
         finally:
-            m.grab_release()
             self._menu_open = False
             if self.visible:
                 user32.SetForegroundWindow(self.hwnd)
