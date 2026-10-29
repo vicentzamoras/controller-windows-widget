@@ -21,22 +21,22 @@ from PIL import Image, ImageDraw, ImageTk
 from . import config, text
 from . import protocol as p
 
-W, H = 316, 348             # card size in px at 96 dpi; everything below is in these units
+W = 300                     # card width in px at 96 dpi (height: layout()); everything is in these units
 PAD = 16
 SS = 4                      # supersampling for shapes and icons
 MARGIN = 12                 # gap to the taskbar and the screen edge
 POLL_MS = 100               # cross-thread calls and the "did we lose the foreground" check
 REOPEN_GUARD = 0.4          # s: a tray click that just closed the panel must not reopen it
 
-HEAD_Y = 25                 # centre of the title row
-MORE = (W - PAD - 28, 11, W - PAD, 39)          # "..." button
-ART = (18, 48, 152, 114)                        # controller illustration: x, y, w, h (120:90)
-BASELINE = 210              # big number, right under the illustration
-LINES_Y = (230, 250, 270)   # status, signal, time: as many as there is to say
-TEXT_X = PAD + 18           # status text, right of its glyph
-LINK_ICON = (168, 200, 52)  # x, y, size: beside the status lines, under the illustration's edge
-BATTERY = (W - PAD - 54, 58, W - PAD, 280)      # body; the nub sits on top
-FIND = (PAD, 296, W - PAD, 332)
+# Laid out like the reference widget's card: illustration, number and status lines on the
+# left, the battery on the right spanning them; its height follows the content
+ART = (PAD, PAD, 148, 111)  # controller illustration: x, y, w, h (120:90)
+BASELINE = 172              # big number, right under the illustration
+LINE_Y, LINE_STEP = 192, 21 # status, signal, time left: as many as there is to say
+TEXT_X = PAD + 18           # status text, right of its glyph (longest beside the icon: 121 px)
+LINK_ICON = (164, 171, 50)  # x, y, size: beside the first two lines, past the illustration's edge
+BAT_X = (W - PAD - 56, W - PAD)
+BTN_H, BTN_GAP = 32, 14     # action row: "Buscar mando" and "..."
 
 PAL = {
     "bg": "#1E2124", "border": "#383D43", "btn_off": "#272B30", "btn_off_border": "#32373D",
@@ -77,11 +77,11 @@ user32.TrackPopupMenuEx.argtypes = [wintypes.HMENU, wintypes.UINT, ctypes.c_int,
 user32.DestroyMenu.argtypes = [wintypes.HMENU]
 
 MF_GRAYED, MF_CHECKED, MF_POPUP, MF_SEPARATOR = 0x1, 0x8, 0x10, 0x800
-TPM_RIGHTALIGN, TPM_VERTICAL, TPM_RETURNCMD = 0x8, 0x40, 0x100
+TPM_RIGHTALIGN, TPM_BOTTOMALIGN, TPM_VERTICAL, TPM_RETURNCMD = 0x8, 0x20, 0x40, 0x100
 
 
 def popup_menu(owner, entries, x, y, exclude):
-    """Shows a native menu with its top-right corner at (x, y), keeping clear
+    """Shows a native menu with its bottom-right corner at (x, y), keeping clear
     of `exclude` (a RECT), and runs the chosen entry's action.
 
     Native like pystray's, so it takes the same dark/light menu theme; Tk draws
@@ -108,7 +108,7 @@ def popup_menu(owner, entries, x, y, exclude):
     menu = build(entries)
     params = TPMPARAMS(ctypes.sizeof(TPMPARAMS), exclude)
     try:
-        cmd = user32.TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_VERTICAL,
+        cmd = user32.TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTALIGN | TPM_BOTTOMALIGN | TPM_VERTICAL,
                                       x, y, owner, ctypes.byref(params))
     finally:
         user32.DestroyMenu(menu)    # submenus too
@@ -152,6 +152,13 @@ def status_lines(st, role):
     if detail:
         lines.append(detail)
     return lines
+
+
+def layout(n_lines):
+    """(bottom of the content = foot of the battery, card height) for n status lines (2 at least:
+    the link icon sits beside the first two)."""
+    bottom = LINE_Y + LINE_STEP * (max(2, n_lines) - 1) + 10
+    return bottom, bottom + BTN_GAP + BTN_H + PAD
 
 
 def ink_on(color):
@@ -210,7 +217,8 @@ class Panel:
         self.root.attributes("-topmost", True)
         self.root.title("SC2Tray")
         self.s = self.root.winfo_fpixels("1i") / 96
-        self.canvas = tk.Canvas(self.root, width=self.u(W), height=self.u(H), highlightthickness=0, bd=0,
+        self.bottom, self.h = layout(2)
+        self.canvas = tk.Canvas(self.root, width=self.u(W), height=self.u(self.h), highlightthickness=0, bd=0,
                                 bg=PAL["bg"])
         self.canvas.pack()
         self.visible = False
@@ -231,13 +239,10 @@ class Panel:
         semi = _family("Segoe UI Variable Text Semibold", "Segoe UI Semibold")
         display = _family("Segoe UI Variable Display Semib", "Segoe UI Semibold")
         px = lambda family, size: tkfont.Font(family=family, size=-self.u(size))
-        self.f_title = px(semi, 14)
-        self.f_label = px(semi, 10)
-        self.f_small = px(text_f, 12)
         self.f_body = px(text_f, 13)
         self.f_strong = px(semi, 13)
-        self.f_number = px(display, 44)
-        self.f_unit = px(text_f, 20)
+        self.f_number = px(display, 40)
+        self.f_unit = px(text_f, 18)
 
     # --- threading -------------------------------------------------------
 
@@ -280,8 +285,7 @@ class Panel:
 
     def show(self):
         self.render()
-        x, y = self._position()
-        self.root.geometry(f"{self.u(W)}x{self.u(H)}+{x}+{y}")
+        self._place()
         self.root.deiconify()
         self.root.update_idletasks()
         self._decorate()
@@ -299,6 +303,10 @@ class Panel:
             self.canvas.delete("all")
             self._images.clear()    # nothing of the card stays in memory while hidden
 
+    def _place(self):
+        x, y = self._position()
+        self.root.geometry(f"{self.u(W)}x{self.u(self.h)}+{x}+{y}")
+
     def _position(self):
         """Bottom-right of the work area of the screen under the cursor (where the tray was clicked)."""
         pt = wintypes.POINT()
@@ -307,7 +315,7 @@ class Panel:
         user32.GetMonitorInfoW(user32.MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), ctypes.byref(info))
         work, mon, m = info.rcWork, info.rcMonitor, self.u(MARGIN)
         x = work.left + m if work.left > mon.left else work.right - self.u(W) - m
-        y = work.top + m if work.top > mon.top else work.bottom - self.u(H) - m
+        y = work.top + m if work.top > mon.top else work.bottom - self.u(self.h) - m
         return x, y
 
     def _decorate(self):
@@ -325,7 +333,10 @@ class Panel:
 
     def refresh(self):
         if self.visible:
+            h = self.h
             self.render()
+            if self.h != h:         # a status line came or went: grow or shrink from the bottom edge
+                self._place()
 
     def render(self):
         app, c, u = self.app, self.canvas, self.u
@@ -335,20 +346,20 @@ class Panel:
         color = STATE[role]
         bars = p.signal_bars(st.signal_dbm) if st.signal_dbm is not None else 0
         # (glyph, text, colour, y): the first line in the state colour
-        lines = [(glyph, line, (PAL["text3"] if role == "off" else color) if i == 0 else PAL["text3"], y)
-                 for i, ((glyph, line), y) in enumerate(zip(status_lines(st, role), LINES_Y))]
+        lines = [(glyph, line, (PAL["text3"] if role == "off" else color) if i == 0 else PAL["text3"],
+                  LINE_Y + LINE_STEP * i) for i, (glyph, line) in enumerate(status_lines(st, role))]
+        self.bottom, self.h = layout(len(lines))
+        c.config(height=u(self.h))
 
         c.delete("all")
         c.create_image(0, 0, image=self._background(st, role, bars, lines), anchor="nw")
-
-        c.create_text(u(PAD), u(HEAD_Y), text="Steam Controller 2", font=self.f_title, fill=PAL["text"], anchor="w")
 
         number = str(st.battery_pct) if st.battery_pct >= 0 else "—"
         num_color = STATE["low"] if role == "low" else PAL["text3"] if role == "off" else PAL["text"]
         c.create_text(u(PAD), u(BASELINE) - self.f_number.metrics("ascent"), text=number, font=self.f_number,
                       fill=num_color, anchor="nw")
         if st.battery_pct >= 0:
-            c.create_text(u(PAD) + self.f_number.measure(number) + u(3), u(BASELINE) - self.f_unit.metrics("ascent"),
+            c.create_text(u(PAD) + self.f_number.measure(number) + u(1), u(BASELINE) - self.f_unit.metrics("ascent"),
                           text="%", font=self.f_unit, fill=PAL["text2"], anchor="nw")
 
         for i, (_, line, ink, y) in enumerate(lines):
@@ -358,7 +369,7 @@ class Panel:
         self._buttons(app.monitor.live_path is not None)
 
     def _background(self, st, role, bars, lines):
-        L = Layer(W, H, self.s, PAL["bg"])
+        L = Layer(W, self.h, self.s, PAL["bg"])
 
         # Controller illustration: body fill under the line art
         L.icon("steam-controller-body", *ART, PAL["art_fill"])
@@ -390,9 +401,9 @@ class Panel:
         return photo
 
     def _battery(self, L, st, role):
-        x0, y0, x1, y1 = BATTERY
+        (x0, x1), y0, y1 = BAT_X, PAD + 7, self.bottom    # from the illustration's top to the last line
         cx = (x0 + x1) / 2
-        L.box(cx - 11, y0 - 7, cx + 11, y0 - 2, 1.5, PAL["outline"])                 # nub
+        L.box(cx - 11, PAD, cx + 11, PAD + 5, 1.5, PAL["outline"])                   # nub
         L.box(x0, y0, x1, y1, 5, None, PAL["outline"], 2)                             # body
         inset = 5
         full = (y1 - y0) - 2 * inset
@@ -416,7 +427,8 @@ class Panel:
 
     def _buttons(self, awake):
         c, u = self.canvas, self.u
-        fx0, fy0, fx1, fy1 = FIND
+        y = self.bottom + BTN_GAP
+        fx0, fy0, fx1, fy1 = PAD, y, W - PAD - BTN_H - 8, y + BTN_H
         fw, fh = fx1 - fx0, fy1 - fy0
         label = "Buscar mando"
         gx = fw / 2 - (16 + 8 + self.f_strong.measure(label) / self.s) / 2
@@ -431,15 +443,15 @@ class Panel:
         c.create_text(u(fx0 + gx + 24), u(fy0 + fh / 2), text=label, font=self.f_strong, anchor="w",
                       fill=ink, tags=("find",))
 
-        mx0, my0, mx1, my1 = MORE
+        mx0, my0, mx1, my1 = self._more_box = (W - PAD - BTN_H, y, W - PAD, y + BTN_H)
         mw, mh = mx1 - mx0, my1 - my0
 
         def dots(L):
             for dx in (-6, 0, 6):
                 L.draw.ellipse(L.r(mw / 2 + dx - 1.3, mh / 2 - 1.3, mw / 2 + dx + 1.3, mh / 2 + 1.3), fill=PAL["text2"])
 
-        more_n = self._button(mw, mh, PAL["bg"], None, dots, "more")
-        more_h = self._button(mw, mh, PAL["btn_hover"], None, dots, "more_hover")
+        more_n = self._button(mw, mh, PAL["btn"], PAL["btn_border"], dots, "more")
+        more_h = self._button(mw, mh, PAL["btn_hover"], PAL["btn_border"], dots, "more_hover")
         more = c.create_image(u(mx0), u(my0), image=more_n, anchor="nw", tags=("more",))
 
         for tag, item, n, h, action in (("find", find, find_n, find_h, self._find if awake else None),
@@ -462,12 +474,12 @@ class Panel:
                    ("Iniciar con Windows", app.toggle_autostart, config.autostart_enabled(), True),
                    None,
                    ("Salir", app.quit, False, True)]
-        mx0, my0, mx1, my1 = (self.u(v) for v in MORE)
+        mx0, my0, mx1, my1 = (self.u(v) for v in self._more_box)
         x0, y0 = self.root.winfo_rootx(), self.root.winfo_rooty()
         button = wintypes.RECT(x0 + mx0, y0 + my0, x0 + mx1, y0 + my1)
         self._menu_open = True
         try:
-            popup_menu(self.hwnd, entries, button.right, button.bottom + self.u(4), button)
+            popup_menu(self.hwnd, entries, button.right, button.top - self.u(4), button)
         finally:
             self._menu_open = False
             if self.visible:

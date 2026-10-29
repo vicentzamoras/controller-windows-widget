@@ -15,7 +15,7 @@ def test_headline_and_detail():
     charging = replace(LIVE, charging=True, eta_min=80)
     assert (text.headline(charging, False), text.detail(charging)) == ("Cargando", ("hourglass", "Lleno en ~1 h 20 min"))
     full = replace(LIVE, charging=True, charged=True, eta_min=None)
-    assert (text.headline(full, False), text.detail(full)) == ("Cargado", ("clock", "Actualizado 14:32"))
+    assert (text.headline(full, False), text.detail(full)) == ("Cargado", None)
     assert text.headline(replace(LIVE, provisional=True), False) == "Leyendo batería…"
     assert text.headline(OFF, False) == "Apagado o fuera de alcance"
     assert text.detail(OFF) == ("clock", "Último dato 14:32")
@@ -30,12 +30,20 @@ def test_status_lines():
     assert panel.status_lines(LIVE, "puck") == [("dot", "Conectado"), ("bars", "−52 dBm"),
                                                 ("hourglass", "Quedan ~3 h 10 min")]
     bt = replace(LIVE, connection="bluetooth", signal_dbm=None, eta_min=None)
-    assert panel.status_lines(bt, "bluetooth") == [("bluetooth", "Conectado"), ("clock", "Actualizado 14:32")]
+    assert panel.status_lines(bt, "bluetooth") == [("bluetooth", "Conectado")]
     usb = replace(LIVE, connection="usb", charging=True, signal_dbm=None, eta_min=40)
     assert panel.status_lines(usb, "usb") == [("bolt", "Cargando"), ("hourglass", "Lleno en ~40 min")]
     assert panel.status_lines(replace(LIVE, battery_pct=12), "low")[0] == ("dot", "Baja — conéctalo")
     assert panel.status_lines(replace(OFF, docked=True), "dock") == [("bolt", "Apagado en el dock"),
                                                                     ("clock", "Último dato 14:32")]
+
+
+def test_layout():
+    bottom2, h2 = panel.layout(2)
+    assert panel.layout(1) == (bottom2, h2)         # room for the link icon beside two lines
+    bottom3, h3 = panel.layout(3)
+    assert bottom3 - bottom2 == h3 - h2 == panel.LINE_STEP
+    assert h2 == bottom2 + panel.BTN_GAP + panel.BTN_H + panel.PAD
 
 
 def test_state_role():

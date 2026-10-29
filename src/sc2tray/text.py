@@ -68,14 +68,12 @@ def headline(st, low):
 
 
 def detail(st):
-    """Last status line as (icon, text), or None: time left, or how old the reading is."""
+    """Last status line as (icon, text), or None: time left, or the age of a stale reading."""
     if st.connected and not st.provisional and st.eta_min is not None:
         return "hourglass", (f"Lleno en ~{duration(st.eta_min)}" if st.charging
                              else f"Quedan ~{duration(st.eta_min)}")
     if not st.connected and st.battery_pct >= 0:
         return "clock", f"Último dato {st.last_seen}" if st.last_seen else "Último valor conocido"
-    if st.connected and st.last_seen:
-        return "clock", f"Actualizado {st.last_seen}"
     return None
 
 

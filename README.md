@@ -23,8 +23,10 @@ python -m venv .venv
   LED (blanco puck, azul Bluetooth, verde USB-C, naranja apagado en el dock, rojo
   batería baja), y bajo el nivel el estado, la señal del puck (barras y dBm) y el
   tiempo estimado, junto al icono del enlace (puck, Steam Machine, Bluetooth o
-  USB-C). "Buscar mando" hace vibrar el mando; "⋯" abre las melodías y los
-  ajustes. Se cierra al hacer clic fuera o con Esc.
+  USB-C). La batería va de la parte superior de la ilustración a la última
+  línea, y la altura de la tarjeta sigue al contenido (una línea más solo si
+  hay tiempo estimado). Abajo, "Buscar mando" hace vibrar el mando y "⋯" abre
+  encima las melodías y los ajustes. Se cierra al hacer clic fuera o con Esc.
 - **Tooltip**: nivel, estado de carga, enlace, señal (dBm) y tiempo estimado.
 - **Menú (clic derecho)**: Buscar mando (vibración o melodía en los actuadores
   hápticos), avisos de batería baja / carga completa / desconexión, Iniciar con Windows.
