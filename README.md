@@ -21,8 +21,9 @@ python -m venv .venv
 - **Panel (clic izquierdo)**: tarjeta oscura al estilo del widget de Plasma, con
   sus iconos: ilustración del mando, nivel grande, batería vertical del color del
   LED (blanco puck, azul Bluetooth, verde USB-C, naranja apagado en el dock, rojo
-  batería baja), estado y tiempo estimado, y recuadros de conexión, señal (barras
-  y dBm) y dock. "Buscar mando" hace vibrar el mando; "⋯" abre las melodías y los
+  batería baja), y bajo el nivel el estado, la señal del puck (barras y dBm) y el
+  tiempo estimado, junto al icono del enlace (puck, Steam Machine, Bluetooth o
+  USB-C). "Buscar mando" hace vibrar el mando; "⋯" abre las melodías y los
   ajustes. Se cierra al hacer clic fuera o con Esc.
 - **Tooltip**: nivel, estado de carga, enlace, señal (dBm) y tiempo estimado.
 - **Menú (clic derecho)**: Buscar mando (vibración o melodía en los actuadores

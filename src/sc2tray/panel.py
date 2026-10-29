@@ -21,7 +21,7 @@ from PIL import Image, ImageDraw, ImageTk
 from . import config, text
 from . import protocol as p
 
-W, H = 340, 382             # card size in px at 96 dpi; everything below is in these units
+W, H = 316, 348             # card size in px at 96 dpi; everything below is in these units
 PAD = 16
 SS = 4                      # supersampling for shapes and icons
 MARGIN = 12                 # gap to the taskbar and the screen edge
@@ -30,17 +30,16 @@ REOPEN_GUARD = 0.4          # s: a tray click that just closed the panel must no
 
 HEAD_Y = 25                 # centre of the title row
 MORE = (W - PAD - 28, 11, W - PAD, 39)          # "..." button
-ART = (PAD, 50, 128, 96)                        # controller illustration: x, y, w, h (120:90)
-BASELINE = 196              # big number
-LINK_ICON = (196, 150, 48)                      # x, y, size
-LINE1_Y, LINE2_Y = 218, 240
-BATTERY = (W - PAD - 52, 58, W - PAD, 250)      # body; the nub sits on top
-TILES_Y, TILE_H, TILE_GAP = 266, 52, 8
-TILE_W = (136, 100, 56)     # connection, signal, dock
-FIND = (PAD, 330, W - PAD, 366)
+ART = (18, 48, 152, 114)                        # controller illustration: x, y, w, h (120:90)
+BASELINE = 210              # big number, right under the illustration
+LINES_Y = (230, 250, 270)   # status, signal, time: as many as there is to say
+TEXT_X = PAD + 18           # status text, right of its glyph
+LINK_ICON = (168, 200, 52)  # x, y, size: beside the status lines, under the illustration's edge
+BATTERY = (W - PAD - 54, 58, W - PAD, 280)      # body; the nub sits on top
+FIND = (PAD, 296, W - PAD, 332)
 
 PAL = {
-    "bg": "#1E2124", "border": "#383D43", "tile": "#272B30", "tile_border": "#32373D",
+    "bg": "#1E2124", "border": "#383D43", "btn_off": "#272B30", "btn_off_border": "#32373D",
     "text": "#FCFCFC", "text2": "#C9CDD2", "text3": "#8B9198",
     "outline": "#5A6068", "track": "#3A3F45", "art_fill": "#2C3035",
     "btn": "#30353B", "btn_hover": "#3A4047", "btn_border": "#41474E", "disabled_text": "#61676E",
@@ -140,6 +139,19 @@ def link_icon(st):
 def charging(st):
     """Bolt on the battery: charging awake, or switched off on the dock."""
     return not st.charged and (st.charging or (st.docked and not st.connected))
+
+
+def status_lines(st, role):
+    """(glyph, text) per line under the number: status, puck signal, then time left or data age."""
+    glyph = ("bolt" if charging(st) else
+             "bluetooth" if st.connected and st.connection == "bluetooth" else "dot")
+    lines = [(glyph, text.headline(st, role == "low"))]
+    if st.connected and st.signal_dbm is not None:
+        lines.append(("bars", text.signal(st)))
+    detail = text.detail(st)
+    if detail:
+        lines.append(detail)
+    return lines
 
 
 def ink_on(color):
@@ -322,9 +334,12 @@ class Panel:
         role = state_role(st, low)
         color = STATE[role]
         bars = p.signal_bars(st.signal_dbm) if st.signal_dbm is not None else 0
+        # (glyph, text, colour, y): the first line in the state colour
+        lines = [(glyph, line, (PAL["text3"] if role == "off" else color) if i == 0 else PAL["text3"], y)
+                 for i, ((glyph, line), y) in enumerate(zip(status_lines(st, role), LINES_Y))]
 
         c.delete("all")
-        c.create_image(0, 0, image=self._background(st, role, bars), anchor="nw")
+        c.create_image(0, 0, image=self._background(st, role, bars, lines), anchor="nw")
 
         c.create_text(u(PAD), u(HEAD_Y), text="Steam Controller 2", font=self.f_title, fill=PAL["text"], anchor="w")
 
@@ -336,67 +351,39 @@ class Panel:
             c.create_text(u(PAD) + self.f_number.measure(number) + u(3), u(BASELINE) - self.f_unit.metrics("ascent"),
                           text="%", font=self.f_unit, fill=PAL["text2"], anchor="nw")
 
-        c.create_text(u(PAD + 18), u(LINE1_Y), text=text.headline(st, role == "low"), font=self.f_strong,
-                      fill=PAL["text3"] if role == "off" else color, anchor="w")
-        detail = text.detail(st)
-        if detail:
-            c.create_text(u(PAD + 18), u(LINE2_Y), text=detail[1], font=self.f_body, fill=PAL["text3"], anchor="w")
-
-        # Tiles: caption, then the value right of its icon (drawn in _background)
-        tiles = [("CONEXIÓN", text.link(st), 20 if link_icon(st) else 0), ("SEÑAL", text.signal(st), 21),
-                 ("DOCK", text.dock(st), 15 if st.docked else 0)]
-        x = PAD
-        for (label, value, indent), w in zip(tiles, TILE_W):
-            c.create_text(u(x + 10), u(TILES_Y + 16), text=label, font=self.f_label, fill=PAL["text3"], anchor="w")
-            muted = value in ("—", "Sin conexión", "No")
-            c.create_text(u(x + 10 + indent), u(TILES_Y + 36), text=value, font=self.f_strong, anchor="w",
-                          fill=PAL["text3"] if muted else PAL["text"])
-            x += w + TILE_GAP
+        for i, (_, line, ink, y) in enumerate(lines):
+            c.create_text(u(TEXT_X), u(y), text=line, font=self.f_strong if i == 0 else self.f_body,
+                          fill=ink, anchor="w")
 
         self._buttons(app.monitor.live_path is not None)
 
-    def _background(self, st, role, bars):
+    def _background(self, st, role, bars, lines):
         L = Layer(W, H, self.s, PAL["bg"])
-        color = STATE[role]
 
         # Controller illustration: body fill under the line art
         L.icon("steam-controller-body", *ART, PAL["art_fill"])
         L.icon("steam-controller-lines", *ART, PAL["text"] if st.connected else PAL["text3"])
 
-        # How it is linked, next to the number
+        # How it is linked, beside the status lines
         icon = link_icon(st)
         if icon:
             x, y, size = LINK_ICON
             L.icon(icon, x, y, size, size, PAL["text2"])
 
-        # Status lines: dot or bolt in the state colour, then hourglass or clock
-        dot = PAL["text3"] if role == "off" else color
-        if charging(st):
-            L.icon("bolt", PAD, LINE1_Y - 7, 14, 14, dot)
-        else:
-            L.draw.ellipse(L.r(PAD + 3, LINE1_Y - 4, PAD + 11, LINE1_Y + 4), fill=dot)
-        detail = text.detail(st)
-        if detail:
-            L.icon(detail[0], PAD + 1, LINE2_Y - 6, 12, 12, PAL["text3"])
+        for i, (glyph, _, ink, y) in enumerate(lines):
+            if glyph == "dot":
+                L.draw.ellipse(L.r(PAD + 3, y - 4, PAD + 11, y + 4), fill=ink)
+            elif glyph == "bars":       # rising bars, the weakest level in red
+                for b in range(4):
+                    h = 4 + 2.7 * b
+                    lit = bars > b
+                    tone = (STATE["low"] if bars == 1 else PAL["text"]) if lit else PAL["track"]
+                    L.box(PAD + 1 + 4 * b, y + 5 - h, PAD + 4 + 4 * b, y + 5, 0.8, tone)
+            else:
+                size = 14 if i == 0 else 12
+                L.icon(glyph, PAD + 7 - size / 2, y - size / 2, size, size, ink)
 
         self._battery(L, st, role)
-
-        # Tiles: connection, signal, dock
-        x = PAD
-        for i, w in enumerate(TILE_W):
-            L.box(x, TILES_Y, x + w, TILES_Y + TILE_H, 3, PAL["tile"], PAL["tile_border"])
-            vy = TILES_Y + 36
-            if i == 0 and icon:
-                L.icon(icon, x + 10, vy - 8, 16, 16, PAL["text2"])
-            elif i == 1:
-                for b in range(4):     # rising bars, the weakest level in red
-                    h = 4 + 3 * b
-                    lit = bars > b
-                    ink = (STATE["low"] if bars == 1 else PAL["text"]) if lit else PAL["track"]
-                    L.box(x + 10 + 4.5 * b, vy + 6 - h, x + 13 + 4.5 * b, vy + 6, 0.8, ink)
-            elif i == 2 and st.docked:
-                L.icon("bolt", x + 8, vy - 6, 12, 12, color if charging(st) else PAL["text2"])
-            x += w + TILE_GAP
 
         photo = L.photo()
         self._images["bg"] = photo
@@ -439,7 +426,7 @@ class Panel:
             find_n = self._button(fw, fh, PAL["btn"], PAL["btn_border"], locate, "find")
             find_h = self._button(fw, fh, PAL["btn_hover"], PAL["btn_border"], locate, "find_hover")
         else:
-            find_n = find_h = self._button(fw, fh, PAL["tile"], PAL["tile_border"], locate, "find")
+            find_n = find_h = self._button(fw, fh, PAL["btn_off"], PAL["btn_off_border"], locate, "find")
         find = c.create_image(u(fx0), u(fy0), image=find_n, anchor="nw", tags=("find",))
         c.create_text(u(fx0 + gx + 24), u(fy0 + fh / 2), text=label, font=self.f_strong, anchor="w",
                       fill=ink, tags=("find",))

@@ -50,43 +50,34 @@ def tooltip(st):
 
 
 # --- panel -------------------------------------------------------------------
+# Short: the lines sit beside the link icon, as on the reference widget's card
 
 def headline(st, low):
     """First status line; `low` = the level is at or below the warning threshold."""
     if not st.connected:
-        return "Apagado en el dock" if st.docked else status(st)
+        if st.docked:
+            return "Apagado en el dock"
+        return "Apagado o fuera de alcance" if st.receiver else "Receptor no conectado"
     if st.provisional or st.battery_pct < 0:
         return "Leyendo batería…"
     if st.charged:
         return "Cargado"
     if st.charging:
         return "Cargando"
-    return "Batería baja — conéctalo" if low else "Conectado"
+    return "Baja — conéctalo" if low else "Conectado"
 
 
 def detail(st):
-    """Second status line as (icon, text), or None: time left, or how old the reading is."""
+    """Last status line as (icon, text), or None: time left, or how old the reading is."""
     if st.connected and not st.provisional and st.eta_min is not None:
         return "hourglass", (f"Lleno en ~{duration(st.eta_min)}" if st.charging
                              else f"Quedan ~{duration(st.eta_min)}")
     if not st.connected and st.battery_pct >= 0:
-        return "clock", "Último valor conocido" + (f" · {st.last_seen}" if st.last_seen else "")
+        return "clock", f"Último dato {st.last_seen}" if st.last_seen else "Último valor conocido"
     if st.connected and st.last_seen:
-        return "clock", f"Actualizado a las {st.last_seen}"
+        return "clock", f"Actualizado {st.last_seen}"
     return None
-
-
-def link(st):
-    if st.connected:
-        return connection_label(st)
-    return "Puck" if st.docked else "Sin conexión"
 
 
 def signal(st):
     return f"{st.signal_dbm} dBm".replace("-", "−") if st.signal_dbm is not None else "—"
-
-
-def dock(st):
-    if not st.receiver:
-        return "—"          # only the puck can tell
-    return "Sí" if st.docked else "No"

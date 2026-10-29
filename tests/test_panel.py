@@ -11,27 +11,31 @@ OFF = replace(LIVE, connected=False, provisional=True, connection="", signal_dbm
 def test_headline_and_detail():
     assert text.headline(LIVE, False) == "Conectado"
     assert text.detail(LIVE) == ("hourglass", "Quedan ~3 h 10 min")
-    assert text.headline(replace(LIVE, battery_pct=12), True) == "Batería baja — conéctalo"
+    assert text.headline(replace(LIVE, battery_pct=12), True) == "Baja — conéctalo"
     charging = replace(LIVE, charging=True, eta_min=80)
     assert (text.headline(charging, False), text.detail(charging)) == ("Cargando", ("hourglass", "Lleno en ~1 h 20 min"))
     full = replace(LIVE, charging=True, charged=True, eta_min=None)
-    assert (text.headline(full, False), text.detail(full)) == ("Cargado", ("clock", "Actualizado a las 14:32"))
+    assert (text.headline(full, False), text.detail(full)) == ("Cargado", ("clock", "Actualizado 14:32"))
     assert text.headline(replace(LIVE, provisional=True), False) == "Leyendo batería…"
-    assert text.headline(OFF, False) == "Mando apagado o fuera de alcance"
-    assert text.detail(OFF) == ("clock", "Último valor conocido · 14:32")
+    assert text.headline(OFF, False) == "Apagado o fuera de alcance"
+    assert text.detail(OFF) == ("clock", "Último dato 14:32")
+    assert text.detail(replace(OFF, last_seen="")) == ("clock", "Último valor conocido")
     assert text.headline(replace(OFF, docked=True), False) == "Apagado en el dock"
     assert text.headline(replace(OFF, battery_pct=-1, receiver=False), False) == "Receptor no conectado"
     assert text.detail(replace(OFF, battery_pct=-1, last_seen="")) is None
+    assert (text.signal(LIVE), text.signal(OFF)) == ("−52 dBm", "—")
 
 
-def test_tiles():
-    assert (text.link(LIVE), text.signal(LIVE), text.dock(LIVE)) == ("Puck", "−52 dBm", "No")
-    assert text.link(replace(LIVE, internal=True)) == "Steam Machine"
-    bt = replace(LIVE, connection="bluetooth", receiver=False, signal_dbm=None)
-    assert (text.link(bt), text.signal(bt), text.dock(bt)) == ("Bluetooth", "—", "—")
-    assert text.link(replace(LIVE, connection="usb")) == "USB-C"
-    assert (text.link(OFF), text.dock(replace(OFF, docked=True))) == ("Sin conexión", "Sí")
-    assert text.link(replace(OFF, docked=True)) == "Puck"
+def test_status_lines():
+    assert panel.status_lines(LIVE, "puck") == [("dot", "Conectado"), ("bars", "−52 dBm"),
+                                                ("hourglass", "Quedan ~3 h 10 min")]
+    bt = replace(LIVE, connection="bluetooth", signal_dbm=None, eta_min=None)
+    assert panel.status_lines(bt, "bluetooth") == [("bluetooth", "Conectado"), ("clock", "Actualizado 14:32")]
+    usb = replace(LIVE, connection="usb", charging=True, signal_dbm=None, eta_min=40)
+    assert panel.status_lines(usb, "usb") == [("bolt", "Cargando"), ("hourglass", "Lleno en ~40 min")]
+    assert panel.status_lines(replace(LIVE, battery_pct=12), "low")[0] == ("dot", "Baja — conéctalo")
+    assert panel.status_lines(replace(OFF, docked=True), "dock") == [("bolt", "Apagado en el dock"),
+                                                                    ("clock", "Último dato 14:32")]
 
 
 def test_state_role():
