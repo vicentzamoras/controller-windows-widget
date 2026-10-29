@@ -18,6 +18,9 @@ python -m venv .venv
 .\.venv\Scripts\python -m sc2tray --find ticktock
 ```
 
+- **Panel (clic izquierdo)**: nivel grande, estado y tiempo estimado, conexión,
+  señal, último dato, gráfica de las últimas 24 h y botón "Buscar mando". Se
+  cierra al hacer clic fuera o con Esc; sigue el tema claro/oscuro de Windows.
 - **Tooltip**: nivel, estado de carga, enlace, señal (dBm) y tiempo estimado.
 - **Menú (clic derecho)**: Buscar mando (vibración o melodía en los actuadores
   hápticos), avisos de batería baja / carga completa / desconexión, Iniciar con Windows.
@@ -32,7 +35,7 @@ Ajustes en `%APPDATA%\SC2Tray\config.json`; historial de 24 h en
 .\.venv\Scripts\python tools\build_exe.py
 ```
 
-Genera `dist\SC2Tray.exe` (un solo archivo, ~16 MB, sin necesidad de Python).
+Genera `dist\SC2Tray.exe` (un solo archivo, ~20 MB, sin necesidad de Python).
 Cópialo donde quieras y actívale "Iniciar con Windows" desde el menú: el
 autoarranque apunta a la ruta del `.exe`, así que si lo mueves, vuelve a
 activarlo. `--find` funciona también con el `.exe`; `--headless` no, porque
@@ -48,6 +51,8 @@ no tiene consola.
 | `src/sc2tray/state.py` | estado, estimación de tiempo, historial |
 | `src/sc2tray/icons.py` | icono variante A (barra de nivel) dibujado con Pillow |
 | `src/sc2tray/tray.py` | pystray: icono, tooltip, menú, notificaciones |
+| `src/sc2tray/panel.py` | panel emergente (tkinter + Pillow) |
+| `src/sc2tray/text.py` | textos del tooltip, el menú y el panel |
 | `src/sc2tray/config.py` | ajustes, autoarranque (HKCU Run), instancia única, tema |
 | `tools/hid_probe.py` | lista las colecciones HID y muestrea reports (diagnóstico) |
 | `tools/build_exe.py` | icono de la app + PyInstaller → `dist\SC2Tray.exe` |

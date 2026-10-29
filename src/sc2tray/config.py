@@ -76,13 +76,22 @@ def set_autostart(on):
                 pass
 
 
-def taskbar_is_light():
+def _personalize(name):
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                             r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as k:
-            return winreg.QueryValueEx(k, "SystemUsesLightTheme")[0] == 1
+            return winreg.QueryValueEx(k, name)[0] == 1
     except OSError:
         return False
+
+
+def taskbar_is_light():
+    return _personalize("SystemUsesLightTheme")
+
+
+def apps_use_light():
+    """The app theme (Settings > Personalization > Colors), which can differ from the taskbar's."""
+    return _personalize("AppsUseLightTheme")
 
 
 ERROR_ALREADY_EXISTS = 183

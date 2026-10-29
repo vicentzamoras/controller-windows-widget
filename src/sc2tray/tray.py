@@ -1,4 +1,4 @@
-"""The system tray app: icon, tooltip, context menu and notifications."""
+"""The system tray app: icon, tooltip, context menu, notifications and the flyout panel."""
 import ctypes
 import os
 import tempfile
@@ -11,14 +11,25 @@ from . import config, device, icons
 from . import protocol as p
 from .monitor import Monitor
 from .state import ControllerState
+from .text import TOOLTIP_MAX, connection_label, duration, header, status, tooltip  # noqa: F401
 
-THEME_POLL = 10             # s between checks of the taskbar's light/dark theme
-TOOLTIP_MAX = 127           # Windows truncates NOTIFYICONDATA.szTip beyond this
+THEME_POLL = 10             # s between checks of the light/dark theme
 SM_CXSMICON = 49
 
 MELODY_LABELS = [("ticktock", "Tic-tac"), ("bird", "Pájaro"), ("ringing", "Timbre"),
                  ("sos", "SOS"), ("alarm", "Alarma")]
-SIGNAL_LABELS = {4: "excelente", 3: "buena", 2: "regular", 1: "débil"}
+APP_MODE_DARK, APP_MODE_LIGHT = 2, 3
+
+
+def menu_theme(light):
+    """Dark or light context menus, like the rest of Windows (uxtheme's unnamed
+    SetPreferredAppMode / FlushMenuThemes, the ones Explorer and Notepad++ use)."""
+    try:
+        ux = ctypes.windll.uxtheme
+        ux[135](APP_MODE_LIGHT if light else APP_MODE_DARK)
+        ux[136]()
+    except (OSError, AttributeError):
+        pass
 
 
 def small_icon_size():
@@ -49,60 +60,23 @@ class TrayIcon(pystray.Icon):
             os.remove(path)
 
 
-def connection_label(st):
-    if st.connection == "receiver":
-        return "Steam Machine" if st.internal else "Puck"
-    return {"bluetooth": "Bluetooth", "usb": "USB-C"}.get(st.connection, "")
-
-
-def duration(minutes):
-    h, m = divmod(minutes, 60)
-    return f"{h} h {m} min" if h else f"{m} min"
-
-
-def header(st):
-    if st.connected and st.battery_pct >= 0 and not st.provisional:
-        return f"Steam Controller 2 — {st.battery_pct} %"
-    if st.connected:
-        return "Steam Controller 2 — leyendo batería…"
-    return "Steam Controller 2 — sin conexión"
-
-
-def status(st):
-    if not st.connected:
-        if st.docked:
-            return "Apagado en el dock · cargando"
-        if st.receiver:
-            return "Mando apagado o fuera de alcance"
-        return "Receptor no conectado"
-    parts = ["Cargado" if st.charged else "Cargando" if st.charging else "Con batería", connection_label(st)]
-    if st.docked:
-        parts.append("en el dock")
-    return " · ".join(x for x in parts if x)
-
-
-def tooltip(st):
-    lines = [header(st), status(st)]
-    if st.signal_dbm is not None:
-        lines.append(f"Señal {SIGNAL_LABELS[p.signal_bars(st.signal_dbm)]} ({st.signal_dbm} dBm)".replace("-", "−"))
-    if st.eta_min is not None:
-        lines.append(f"Lleno en ~{duration(st.eta_min)}" if st.charging else f"Quedan ~{duration(st.eta_min)}")
-    elif not st.connected and st.battery_pct >= 0:
-        lines.append(f"Último nivel: {st.battery_pct} %" + (f" ({st.last_seen})" if st.last_seen else ""))
-    return "\n".join(lines)[:TOOLTIP_MAX]
-
-
 class App:
+    MELODIES = MELODY_LABELS
+
     def __init__(self):
         self.cfg = config.Config()
         self.size = small_icon_size()
         self.light = config.taskbar_is_light()
+        self.apps_light = config.apps_use_light()
+        menu_theme(self.apps_light)
         self.state = ControllerState()
         self._drawn = None
         self._low_notified = False
         self._stop = threading.Event()
         self.monitor = Monitor(self.on_change)
         self.icon = TrayIcon("SC2Tray", self._image(), tooltip(self.state), self._menu())
+        from .panel import Panel     # Tk: created here, on the main thread
+        self.panel = Panel(self)
 
     # --- rendering ---------------------------------------------------------
 
@@ -128,6 +102,7 @@ class App:
         prev, self.state = self.state, st
         self._notify(prev, st)
         self._refresh()
+        self.panel.call(self.panel.refresh)
 
     def _notify(self, prev, st):
         cfg = self.cfg
@@ -152,15 +127,18 @@ class App:
             if light != self.light:
                 self.light = light
                 self._refresh()
+            apps_light = config.apps_use_light()
+            if apps_light != self.apps_light:
+                self.apps_light = apps_light
+                menu_theme(apps_light)
 
     # --- menu --------------------------------------------------------------
 
-    def _find(self, melody):
-        def action(icon, item):
-            path = self.monitor.live_path
-            if path:
-                threading.Thread(target=self._run_find, args=(path, melody), daemon=True).start()
-        return action
+    def find(self, melody):
+        """Vibrates (melody None) or plays a tune on the awake pad, in the background."""
+        path = self.monitor.live_path
+        if path:
+            threading.Thread(target=self._run_find, args=(path, melody), daemon=True).start()
 
     def _run_find(self, path, melody):
         try:
@@ -168,44 +146,45 @@ class App:
         except OSError:
             self.icon.notify("No se pudo enviar la señal al mando.", "Buscar mando")
 
-    def _toggle(self, key):
-        def action(icon, item):
-            self.cfg.toggle(key)
-        return action
+    def toggles(self):
+        """(config key, label) of the notification switches."""
+        return [("notify_low", f"Avisar con batería baja ({self.cfg['low_threshold']} %)"),
+                ("notify_full", "Avisar al terminar la carga"),
+                ("notify_disconnect", "Avisar al desconectarse")]
 
-    def _toggle_autostart(self, icon, item):
+    def toggle_autostart(self):
         try:
             config.set_autostart(not config.autostart_enabled())
         except OSError:
             self.icon.notify("No se pudo cambiar el inicio automático.", "SC2Tray")
 
-    def _quit(self, icon, item):
+    def quit(self):
         self._stop.set()
         self.monitor.stop()
-        icon.stop()
+        self.icon.stop()
+        self.panel.call(self.panel.quit)
 
     def _menu(self):
         awake = lambda item: self.monitor.live_path is not None
+        tune = lambda name: lambda: self.find(name)     # pystray actions take 0-2 arguments
         find = Menu(
-            MenuItem("Solo vibración", self._find(None)),
+            MenuItem("Solo vibración", lambda: self.find(None)),
             Menu.SEPARATOR,
-            *[MenuItem(label, self._find(name)) for name, label in MELODY_LABELS])
+            *[MenuItem(label, tune(name)) for name, label in MELODY_LABELS])
+        toggle = lambda key: MenuItem(lambda item: dict(self.toggles())[key], lambda: self.cfg.toggle(key),
+                                      checked=lambda item: self.cfg[key])
         return Menu(
-            MenuItem(lambda item: header(self.state), None, enabled=False),
+            # Default item: left click (and its bold label) opens the panel
+            MenuItem(lambda item: header(self.state), lambda: self.panel.call(self.panel.toggle), default=True),
             MenuItem(lambda item: status(self.state), None, enabled=False),
             Menu.SEPARATOR,
             MenuItem("Buscar mando", find, enabled=awake),
             Menu.SEPARATOR,
-            MenuItem(lambda item: f"Avisar con batería baja ({self.cfg['low_threshold']} %)",
-                     self._toggle("notify_low"), checked=lambda item: self.cfg["notify_low"]),
-            MenuItem("Avisar al terminar la carga", self._toggle("notify_full"),
-                     checked=lambda item: self.cfg["notify_full"]),
-            MenuItem("Avisar al desconectarse", self._toggle("notify_disconnect"),
-                     checked=lambda item: self.cfg["notify_disconnect"]),
-            MenuItem("Iniciar con Windows", self._toggle_autostart,
+            *[toggle(key) for key, _ in self.toggles()],
+            MenuItem("Iniciar con Windows", self.toggle_autostart,
                      checked=lambda item: config.autostart_enabled()),
             Menu.SEPARATOR,
-            MenuItem("Salir", self._quit))
+            MenuItem("Salir", self.quit))
 
     # --- lifecycle ---------------------------------------------------------
 
@@ -215,7 +194,12 @@ class App:
         threading.Thread(target=self._watch_theme, name="sc2-theme", daemon=True).start()
 
     def run(self):
-        self.icon.run(setup=self._setup)
+        """pystray pumps its own Win32 loop in a thread; Tk keeps the main one."""
+        self.icon.run_detached(setup=self._setup)
+        try:
+            self.panel.mainloop()
+        finally:
+            self.quit()
 
 
 def run():
