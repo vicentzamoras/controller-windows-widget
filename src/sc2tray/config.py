@@ -16,6 +16,7 @@ DEFAULTS = {
     "low_threshold": 15,
     "notify_full": True,
     "notify_disconnect": False,
+    "language": "system",       # "system" or a key of i18n.LANGUAGES
 }
 
 
@@ -32,7 +33,10 @@ class Config:
         return self._d[key]
 
     def toggle(self, key):
-        self._d[key] = not self._d[key]
+        self.set(key, not self._d[key])
+
+    def set(self, key, value):
+        self._d[key] = value
         self.save()
 
     def save(self):

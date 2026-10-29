@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from sc2tray import icons, tray
+from sc2tray import i18n, icons, tray
 from sc2tray.state import ControllerState
 
 LIVE = ControllerState(battery_pct=78, connected=True, provisional=False, connection="receiver",
@@ -24,6 +24,15 @@ def test_tooltip_states():
     assert len(tray.tooltip(LIVE)) <= tray.TOOLTIP_MAX
 
 
+def test_tooltip_english():
+    i18n.use("en")
+    assert tray.tooltip(LIVE) == ("Steam Controller 2: 78%\nOn battery · Puck\n"
+                                  "Excellent signal (−52 dBm)\n~3 h 10 min left")
+    off = replace(LIVE, connected=False, provisional=True, connection="", signal_dbm=None, eta_min=None)
+    assert tray.tooltip(off).splitlines() == ["Steam Controller 2: disconnected",
+                                              "Controller off or out of range", "Last level: 78% (14:32)"]
+
+
 def test_icon_kind():
     assert icons.kind_of(LIVE, 15) == icons.NORMAL
     assert icons.kind_of(replace(LIVE, battery_pct=15), 15) == icons.LOW
@@ -44,7 +53,8 @@ class FakeIcon:
 
 def make_app():
     app = object.__new__(tray.App)
-    app.cfg = {"notify_low": True, "low_threshold": 15, "notify_full": True, "notify_disconnect": False}
+    app.cfg = {"notify_low": True, "low_threshold": 15, "notify_full": True, "notify_disconnect": False,
+               "language": "system"}
     app.icon = FakeIcon()
     app._low_notified = False
     return app
@@ -69,3 +79,14 @@ def test_full_and_disconnect():
     app.cfg["notify_disconnect"] = True
     app._notify(LIVE, replace(LIVE, connected=False))
     assert app.icon.sent[-1] == "Mando desconectado"
+
+
+def test_menu_labels_follow_the_language():
+    app = make_app()
+    assert app.melodies()[0] == ("ticktock", "Tic-tac")
+    assert app.languages() == [("system", "Según el sistema"), ("es", "Español"), ("en", "English")]
+    i18n.use("en")
+    assert app.melodies()[0] == ("ticktock", "Tick-tock")
+    assert dict(app.toggles())["notify_low"] == "Notify on low battery (15%)"
+    app._notify(replace(LIVE, battery_pct=16), replace(LIVE, battery_pct=14))
+    assert app.icon.sent == ["Low battery: 14%"]

@@ -1,6 +1,6 @@
 from dataclasses import replace
 
-from sc2tray import panel, text
+from sc2tray import i18n, panel, text
 from sc2tray.state import ControllerState
 
 LIVE = ControllerState(battery_pct=78, connected=True, provisional=False, connection="receiver",
@@ -89,3 +89,17 @@ def test_assets_present():
                  "steam-controller-body", "steam-controller-lines"):
         assert panel._mask(name).mode == "L"
 
+
+def test_english():
+    i18n.use("en")
+    assert panel.status_lines(LIVE, "puck") == [("dot", "Connected"), ("bars", "−52 dBm")]
+    assert panel.status_lines(replace(OFF, docked=True), "dock") == [("bolt", "On the dock"), ("clock", "As of 14:32")]
+    assert text.headline(replace(LIVE, battery_pct=12), True) == "Low battery"
+    assert text.detail(replace(OFF, last_seen="")) == ("clock", "Last value")
+
+
+def test_strings_complete():
+    for key, pair in i18n.STRINGS.items():
+        assert len(pair) == 2 and all(pair), key
+    i18n.use("system")
+    assert i18n.current in i18n.LANGUAGES

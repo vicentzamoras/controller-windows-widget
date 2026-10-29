@@ -11,7 +11,9 @@ It is a Windows port of
 by jahrekza: the reverse-engineered HID protocol and the artwork come from that
 project (MIT, see [NOTICE.md](NOTICE.md)).
 
-> The user interface is in Spanish for now.
+The interface is available in English and Spanish. It follows the Windows
+display language (Spanish for any Spanish locale, English otherwise), and
+can be switched from the menu.
 
 ## Features
 
@@ -27,7 +29,7 @@ project (MIT, see [NOTICE.md](NOTICE.md)).
   them (tick-tock, bird, ringing, SOS, alarm), so you can locate it.
 - **Tooltip**: level, charging state, link, signal and time left.
 - **Context menu** (right click): find the controller, low battery / charge
-  complete / disconnect notifications and start with Windows.
+  complete / disconnect notifications, start with Windows and language.
 - **Works alongside Steam**: HID reads are shared, so Steam keeps working.
 - Battery history for the last 24 hours, used for the time-left estimate.
 
@@ -58,10 +60,10 @@ in `%LOCALAPPDATA%\SC2Tray\history.json`.
 ```
 
 This builds `dist\SC2Tray.exe`, a single file of about 20 MB that does not need
-Python. Copy it anywhere and turn on "Iniciar con Windows" (start with Windows)
-from its menu. The autostart entry points at the `.exe`, so turn it on again if
-you move the file. `--find` works with the `.exe` as well; `--headless` does
-not, since the `.exe` has no console.
+Python. Copy it anywhere and turn on "Start with Windows" from its menu. The
+autostart entry points at the `.exe`, so turn it on again if you move the file.
+`--find` works with the `.exe` as well; `--headless` does not, since the `.exe`
+has no console.
 
 ## How it works
 
@@ -91,7 +93,8 @@ The other product IDs are `28de:1302` (USB-C), `28de:1303` (Bluetooth) and
 | `src/sc2tray/icons.py` | the tray icon, drawn with Pillow |
 | `src/sc2tray/tray.py` | pystray: icon, tooltip, menu, notifications |
 | `src/sc2tray/panel.py` | the flyout panel (tkinter and Pillow) |
-| `src/sc2tray/text.py` | tooltip, menu and panel strings |
+| `src/sc2tray/text.py` | tooltip, menu and panel wording |
+| `src/sc2tray/i18n.py` | English and Spanish strings, system language detection |
 | `src/sc2tray/config.py` | settings, autostart (HKCU Run), single instance, theme |
 | `src/sc2tray/assets/` | PNG masks of the panel's icons, tinted at runtime |
 | `assets/upstream/` | the original SVG artwork of the Plasma widget (MIT) |

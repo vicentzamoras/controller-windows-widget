@@ -7,17 +7,16 @@ import threading
 import pystray
 from pystray import Menu, MenuItem
 
-from . import config, device, icons
+from . import config, device, i18n, icons
 from . import protocol as p
 from .monitor import Monitor
+from .i18n import t
 from .state import ControllerState
 from .text import TOOLTIP_MAX, connection_label, duration, header, status, tooltip  # noqa: F401
 
 THEME_POLL = 10             # s between checks of the light/dark theme
 SM_CXSMICON = 49
 
-MELODY_LABELS = [("ticktock", "Tic-tac"), ("bird", "Pájaro"), ("ringing", "Timbre"),
-                 ("sos", "SOS"), ("alarm", "Alarma")]
 APP_MODE_DARK, APP_MODE_LIGHT = 2, 3
 
 
@@ -61,10 +60,9 @@ class TrayIcon(pystray.Icon):
 
 
 class App:
-    MELODIES = MELODY_LABELS
-
     def __init__(self):
         self.cfg = config.Config()
+        i18n.use(self.cfg["language"])
         self.size = small_icon_size()
         self.light = config.taskbar_is_light()
         self.apps_light = config.apps_use_light()
@@ -109,17 +107,16 @@ class App:
         live = st.connected and not st.provisional and st.battery_pct >= 0
         if live and not st.charging and st.battery_pct <= cfg["low_threshold"]:
             if not self._low_notified and cfg["notify_low"]:
-                eta = f"Quedan ~{duration(st.eta_min)}. " if st.eta_min else ""
-                self.icon.notify(f"{eta}Pon el mando en el puck o conéctalo por USB-C.",
-                                 f"Batería baja: {st.battery_pct} %")
+                eta = t("low_eta", time=duration(st.eta_min)) if st.eta_min else ""
+                self.icon.notify(eta + t("low_body"), t("low_title", n=st.battery_pct))
             self._low_notified = True
         elif live and (st.charging or st.battery_pct > cfg["low_threshold"] + 2):
             self._low_notified = False
         if st.charged and not prev.charged and prev.connected and cfg["notify_full"]:
-            self.icon.notify("El Steam Controller está al 100 %.", "Carga completa")
+            self.icon.notify(t("full_body"), t("full_title"))
         if prev.connected and not st.connected and cfg["notify_disconnect"]:
-            last = f"Último nivel conocido: {st.battery_pct} %." if st.battery_pct >= 0 else ""
-            self.icon.notify(last or "El mando se apagó o perdió la conexión.", "Mando desconectado")
+            last = t("gone_last", n=st.battery_pct) if st.battery_pct >= 0 else ""
+            self.icon.notify(last or t("gone_body"), t("gone_title"))
 
     def _watch_theme(self):
         while not self._stop.wait(THEME_POLL):
@@ -144,19 +141,34 @@ class App:
         try:
             device.find_controller(path, p.MELODIES.get(melody) if melody else None)
         except OSError:
-            self.icon.notify("No se pudo enviar la señal al mando.", "Buscar mando")
+            self.icon.notify(t("find_failed"), t("find"))
+
+    def melodies(self):
+        """(name in protocol.MELODIES, label) of the tunes "find" can play."""
+        return [(name, t(f"melody_{name}")) for name in p.MELODIES]
 
     def toggles(self):
         """(config key, label) of the notification switches."""
-        return [("notify_low", f"Avisar con batería baja ({self.cfg['low_threshold']} %)"),
-                ("notify_full", "Avisar al terminar la carga"),
-                ("notify_disconnect", "Avisar al desconectarse")]
+        return [("notify_low", t("notify_low", n=self.cfg["low_threshold"])),
+                ("notify_full", t("notify_full")),
+                ("notify_disconnect", t("notify_disconnect"))]
+
+    def languages(self):
+        """(config value, label) of the language choices."""
+        return [("system", t("language_system")), *i18n.LANGUAGES.items()]
+
+    def set_language(self, choice):
+        self.cfg.set("language", choice)
+        i18n.use(choice)
+        self.icon.menu = self._menu()   # its fixed labels are built in the old language
+        self._refresh()
+        self.panel.call(self.panel.refresh)
 
     def toggle_autostart(self):
         try:
             config.set_autostart(not config.autostart_enabled())
         except OSError:
-            self.icon.notify("No se pudo cambiar el inicio automático.", "SC2Tray")
+            self.icon.notify(t("autostart_failed"), "SC2Tray")
 
     def quit(self):
         self._stop.set()
@@ -168,22 +180,25 @@ class App:
         awake = lambda item: self.monitor.live_path is not None
         tune = lambda name: lambda: self.find(name)     # pystray actions take 0-2 arguments
         find = Menu(
-            MenuItem("Solo vibración", lambda: self.find(None)),
+            MenuItem(t("vibration_only"), lambda: self.find(None)),
             Menu.SEPARATOR,
-            *[MenuItem(label, tune(name)) for name, label in MELODY_LABELS])
+            *[MenuItem(label, tune(name)) for name, label in self.melodies()])
         toggle = lambda key: MenuItem(lambda item: dict(self.toggles())[key], lambda: self.cfg.toggle(key),
                                       checked=lambda item: self.cfg[key])
+        language = lambda choice, label: MenuItem(label, lambda: self.set_language(choice), radio=True,
+                                                  checked=lambda item: self.cfg["language"] == choice)
         return Menu(
             # Default item: left click (and its bold label) opens the panel
             MenuItem(lambda item: header(self.state), lambda: self.panel.call(self.panel.toggle), default=True),
             Menu.SEPARATOR,
-            MenuItem("Buscar mando", find, enabled=awake),
+            MenuItem(t("find"), find, enabled=awake),
             Menu.SEPARATOR,
             *[toggle(key) for key, _ in self.toggles()],
-            MenuItem("Iniciar con Windows", self.toggle_autostart,
+            MenuItem(t("autostart"), self.toggle_autostart,
                      checked=lambda item: config.autostart_enabled()),
+            MenuItem(t("language"), Menu(*[language(choice, label) for choice, label in self.languages()])),
             Menu.SEPARATOR,
-            MenuItem("Salir", self.quit))
+            MenuItem(t("quit"), self.quit))
 
     # --- lifecycle ---------------------------------------------------------
 

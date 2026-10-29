@@ -19,6 +19,7 @@ from tkinter import font as tkfont
 from PIL import Image, ImageDraw, ImageTk
 
 from . import config, text
+from .i18n import t
 from . import protocol as p
 
 SS = 4                      # supersampling for shapes and icons
@@ -463,7 +464,7 @@ class Panel:
         y = BOTTOM + BTN_GAP
         fx0, fy0, fx1, fy1 = PAD, y, W - PAD - BTN_H - 8, y + BTN_H
         fw, fh = fx1 - fx0, fy1 - fy0
-        label = "Buscar mando"
+        label = t("find")
         gx = fw / 2 - (16 + 8 + self.f_strong.measure(label) / self.s) / 2
         ink = PAL["text"] if awake else PAL["disabled_text"]
         locate = lambda L: L.icon("locate", gx, fh / 2 - 8, 16, 16, ink)
@@ -504,12 +505,15 @@ class Panel:
             return
         app, cfg = self.app, self.app.cfg
         awake = app.monitor.live_path is not None
-        tunes = [(label, lambda n=name: app.find(n), False, True) for name, label in app.MELODIES]
-        entries = [("Buscar con melodía", tunes, False, awake), None,
+        tunes = [(label, lambda n=name: app.find(n), False, True) for name, label in app.melodies()]
+        languages = [(label, lambda c=choice: app.set_language(c), cfg["language"] == choice, True)
+                     for choice, label in app.languages()]
+        entries = [(t("find_tune"), tunes, False, awake), None,
                    *[(label, lambda k=key: cfg.toggle(k), cfg[key], True) for key, label in app.toggles()],
-                   ("Iniciar con Windows", app.toggle_autostart, config.autostart_enabled(), True),
+                   (t("autostart"), app.toggle_autostart, config.autostart_enabled(), True),
+                   (t("language"), languages, False, True),
                    None,
-                   ("Salir", app.quit, False, True)]
+                   (t("quit"), app.quit, False, True)]
         mx0, my0, mx1, my1 = (self.u(v) for v in self._more_box)
         x0, y0 = self.root.winfo_rootx(), self.root.winfo_rooty()
         button = wintypes.RECT(x0 + mx0, y0 + my0, x0 + mx1, y0 + my1)
