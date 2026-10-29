@@ -68,10 +68,8 @@ def headline(st, low):
 
 
 def detail(st):
-    """Last status line as (icon, text), or None: time left (to empty, or to full while the
-    first line says it is charging), or the age of a stale reading."""
-    if st.connected and not st.provisional and st.eta_min is not None:
-        return "hourglass", f"~{duration(st.eta_min)}"
+    """Second status line for a pad that is off, as (icon, text): the age of the reading
+    shown, or None. Time left stays in the tooltip, so the card keeps one height."""
     if not st.connected and st.battery_pct >= 0:
         return "clock", f"Dato de {st.last_seen}" if st.last_seen else "Último valor"
     return None

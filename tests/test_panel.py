@@ -10,10 +10,10 @@ OFF = replace(LIVE, connected=False, provisional=True, connection="", signal_dbm
 
 def test_headline_and_detail():
     assert text.headline(LIVE, False) == "Conectado"
-    assert text.detail(LIVE) == ("hourglass", "~3 h 10 min")
+    assert text.detail(LIVE) is None                     # time left is only in the tooltip
     assert text.headline(replace(LIVE, battery_pct=12), True) == "Batería baja"
     charging = replace(LIVE, charging=True, eta_min=80)
-    assert (text.headline(charging, False), text.detail(charging)) == ("Cargando", ("hourglass", "~1 h 20 min"))
+    assert (text.headline(charging, False), text.detail(charging)) == ("Cargando", None)
     full = replace(LIVE, charging=True, charged=True, eta_min=None)
     assert (text.headline(full, False), text.detail(full)) == ("Cargado", None)
     assert text.headline(replace(LIVE, provisional=True), False) == "Leyendo…"
@@ -27,35 +27,39 @@ def test_headline_and_detail():
 
 
 def test_status_lines():
-    assert panel.status_lines(LIVE, "puck") == [("dot", "Conectado"), ("bars", "−52 dBm"),
-                                                ("hourglass", "~3 h 10 min")]
+    assert panel.status_lines(LIVE, "puck") == [("dot", "Conectado"), ("bars", "−52 dBm")]
+    docked = replace(LIVE, charging=True, docked=True, eta_min=35)
+    assert panel.status_lines(docked, "puck") == [("bolt", "Cargando"), ("bars", "−52 dBm")]
     bt = replace(LIVE, connection="bluetooth", signal_dbm=None, eta_min=None)
     assert panel.status_lines(bt, "bluetooth") == [("bluetooth", "Conectado")]
     usb = replace(LIVE, connection="usb", charging=True, signal_dbm=None, eta_min=40)
-    assert panel.status_lines(usb, "usb") == [("bolt", "Cargando"), ("hourglass", "~40 min")]
+    assert panel.status_lines(usb, "usb") == [("bolt", "Cargando")]
     assert panel.status_lines(replace(LIVE, battery_pct=12), "low")[0] == ("dot", "Batería baja")
     assert panel.status_lines(replace(OFF, docked=True), "dock") == [("bolt", "En el dock"),
                                                                     ("clock", "Dato de 14:32")]
 
 
-def test_layout():
-    bottom2, h2 = panel.layout(2)
-    assert panel.layout(1) == (bottom2, h2)         # room for the link icon beside two lines
-    bottom3, h3 = panel.layout(3)
-    assert bottom3 - bottom2 == h3 - h2 == panel.LINE_STEP
-    assert h2 == bottom2 + panel.BTN_GAP + panel.BTN_H + panel.PAD
+def test_one_height():
+    """Two status lines at most, whatever the state, so the card never changes height."""
+    states = [LIVE, replace(LIVE, charging=True, docked=True), replace(LIVE, connection="usb", charging=True),
+              replace(LIVE, connection="bluetooth", signal_dbm=None), OFF, replace(OFF, docked=True),
+              replace(OFF, battery_pct=-1, receiver=False)]
+    for st in states:
+        assert len(panel.status_lines(st, panel.state_role(st, 15))) <= 2
+    assert panel.BOTTOM == panel.LINE_Y + panel.LINE_STEP + 9
+    assert panel.H == panel.BOTTOM + panel.BTN_GAP + panel.BTN_H + panel.PAD
 
 
 def test_link_box():
-    bottom, _ = panel.layout(2)
+    bottom = panel.BOTTOM
     for name in ("puck", "steam-machine", "bluetooth", "usb-c"):
-        x, y, size = panel.link_box(name, bottom)
+        x, y, size = panel.link_box(name)
         left, top, right, foot = panel._ink(name)
         assert abs(y + foot * size - bottom) < 1e-6                         # foot on the battery's
         assert abs(x + right * size - (panel.BAT_X[0] - panel.LINK_GAP)) < 1e-6
         assert y + top * size > panel.ART[1] + panel.ART[3]                # under the illustration
         assert x + left * size < panel.ART[0] + panel.ART[2]                # ...its right grip
-    assert panel.link_box("puck", bottom)[2] == round(50 * 1.3)
+    assert panel.link_box("puck")[2] == round(50 * 1.3)
     assert 95 <= panel.text_room("puck") < panel.text_room(None)
 
 
@@ -84,3 +88,4 @@ def test_assets_present():
     for name in ("bluetooth", "bolt", "clock", "hourglass", "locate", "puck", "steam-machine", "usb-c",
                  "steam-controller-body", "steam-controller-lines"):
         assert panel._mask(name).mode == "L"
+

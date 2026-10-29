@@ -29,22 +29,24 @@ REOPEN_GUARD = 0.4          # s: a tray click that just closed the panel must no
 # The reference widget's card at 130 %. Its zones: a 132-wide column (the illustration over
 # the number and status lines), a 22 gap, the 58-wide battery. The battery stays close to the
 # illustration, so the link icon (10 left of the battery, its foot on the battery's) tucks in
-# under the controller's right grip, beside the lines. Nothing stretches: the lines set the
-# battery's foot, and the battery plus the action row set the card's height (layout()).
+# under the controller's right grip, beside the lines. The card has one height in every state:
+# two status lines at most set the battery's foot, and the action row goes under it.
 K = 1.3
 PAD = 16
 COL_W, COL_GAP, BAT_W = 132 * K, 22 * K, 58 * K
 W = round(2 * PAD + COL_W + COL_GAP + BAT_W)   # card width in px at 96 dpi; everything is in these units
 ART = (PAD + 4.5 * K, PAD, 123 * K, 92 * K)    # illustration: x, y, w, h
 BASELINE = ART[1] + ART[3] + 37                # big number, right under the illustration
-LINE_Y, LINE_STEP = BASELINE + 19, 21          # status, signal, time left: as many as there is to say
+LINE_Y, LINE_STEP = BASELINE + 19, 21          # status, then the puck signal or the data age
 TEXT_X = PAD + 21                              # status text, right of its glyph
 BAT_X = (W - PAD - BAT_W, W - PAD)
 BAT_TOP = PAD + 8 * K                          # body under the nub
 LINK_GAP, TEXT_GAP = 10 * K, 6                 # link icon to the battery, text to the link icon
 LINK_SIZE = {"steam-machine": 53 * K}          # the bigger drawing
 LINK_DEFAULT = 50 * K
-BTN_H, BTN_GAP = 32, 12                        # action row: "Buscar mando" and "..."
+BTN_H, BTN_GAP = 32, 12                        # action row: "find controller" and "..."
+BOTTOM = LINE_Y + LINE_STEP + 9                # foot of the battery and of the link icon
+H = BOTTOM + BTN_GAP + BTN_H + PAD             # card height
 
 PAL = {
     "bg": "#1E2124", "border": "#383D43", "btn_off": "#272B30", "btn_off_border": "#32373D",
@@ -150,7 +152,7 @@ def charging(st):
 
 
 def status_lines(st, role):
-    """(glyph, text) per line under the number: status, puck signal, then time left or data age."""
+    """(glyph, text) per line under the number, two at most: status, then puck signal or data age."""
     glyph = ("bolt" if charging(st) else
              "bluetooth" if st.connected and st.connection == "bluetooth" else "dot")
     lines = [(glyph, text.headline(st, role == "low"))]
@@ -162,26 +164,19 @@ def status_lines(st, role):
     return lines
 
 
-def layout(n_lines):
-    """(foot of the battery, card height) for n status lines: the battery ends with the last
-    line (the second at least, so the link icon fits beside the number), the action row under it."""
-    bottom = LINE_Y + LINE_STEP * (max(2, n_lines) - 1) + 9
-    return bottom, bottom + BTN_GAP + BTN_H + PAD
-
-
-def link_box(name, bottom):
+def link_box(name):
     """(x, y, size) of a link icon: its drawing right against the battery (less LINK_GAP) and
     its foot level with the battery's, so it sits beside the text lines, bottom-aligned."""
     size = LINK_SIZE.get(name, LINK_DEFAULT)
     _, _, right, foot = _ink(name)
-    return BAT_X[0] - LINK_GAP - right * size, bottom - foot * size, size
+    return BAT_X[0] - LINK_GAP - right * size, BOTTOM - foot * size, size
 
 
 def text_room(name):
     """Width the status lines may use: up to the link icon's drawing, or to the battery."""
     if name is None:
         return BAT_X[0] - LINK_GAP - TEXT_X
-    x, _, size = link_box(name, 0)
+    x, _, size = link_box(name)
     return x + _ink(name)[0] * size - TEXT_GAP - TEXT_X
 
 
@@ -258,8 +253,7 @@ class Panel:
         self.root.attributes("-topmost", True)
         self.root.title("SC2Tray")
         self.s = self.root.winfo_fpixels("1i") / 96
-        self.bottom, self.h = layout(2)
-        self.canvas = tk.Canvas(self.root, width=self.u(W), height=self.u(self.h), highlightthickness=0, bd=0,
+        self.canvas = tk.Canvas(self.root, width=self.u(W), height=self.u(H), highlightthickness=0, bd=0,
                                 bg=PAL["bg"])
         self.canvas.pack()
         self.visible = False
@@ -348,7 +342,7 @@ class Panel:
 
     def _place(self):
         x, y = self._position()
-        self.root.geometry(f"{self.u(W)}x{self.u(self.h)}+{x}+{y}")
+        self.root.geometry(f"{self.u(W)}x{self.u(H)}+{x}+{y}")
 
     def _position(self):
         """Bottom-right of the work area of the screen under the cursor (where the tray was clicked)."""
@@ -358,7 +352,7 @@ class Panel:
         user32.GetMonitorInfoW(user32.MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), ctypes.byref(info))
         work, mon, m = info.rcWork, info.rcMonitor, self.u(MARGIN)
         x = work.left + m if work.left > mon.left else work.right - self.u(W) - m
-        y = work.top + m if work.top > mon.top else work.bottom - self.u(self.h) - m
+        y = work.top + m if work.top > mon.top else work.bottom - self.u(H) - m
         return x, y
 
     def _decorate(self):
@@ -376,10 +370,7 @@ class Panel:
 
     def refresh(self):
         if self.visible:
-            h = self.h
             self.render()
-            if self.h != h:         # a status line came or went: grow or shrink from the bottom edge
-                self._place()
 
     def render(self):
         app, c, u = self.app, self.canvas, self.u
@@ -391,8 +382,6 @@ class Panel:
         # (glyph, text, colour, y): the first line in the state colour
         lines = [(glyph, line, (PAL["text3"] if role == "off" else color) if i == 0 else PAL["text3"],
                   LINE_Y + LINE_STEP * i) for i, (glyph, line) in enumerate(status_lines(st, role))]
-        self.bottom, self.h = layout(len(lines))
-        c.config(height=u(self.h))
 
         c.delete("all")
         c.create_image(0, 0, image=self._background(st, role, bars, lines), anchor="nw")
@@ -413,7 +402,7 @@ class Panel:
         self._buttons(app.monitor.live_path is not None)
 
     def _background(self, st, role, bars, lines):
-        L = Layer(W, self.h, self.s, PAL["bg"])
+        L = Layer(W, H, self.s, PAL["bg"])
 
         # Controller illustration: body fill under the line art
         L.icon("steam-controller-body", *ART, PAL["art_fill"])
@@ -422,7 +411,7 @@ class Panel:
         # How it is linked: beside the number and the status lines, its foot on the battery's
         icon = link_icon(st)
         if icon:
-            x, y, size = link_box(icon, self.bottom)
+            x, y, size = link_box(icon)
             L.icon(icon, x, y, size, size, PAL["link"])
 
         for i, (glyph, _, ink, y) in enumerate(lines):
@@ -445,7 +434,7 @@ class Panel:
         return photo
 
     def _battery(self, L, st, role):
-        (x0, x1), y0, y1 = BAT_X, BAT_TOP, self.bottom    # from the illustration's top to the last line
+        (x0, x1), y0, y1 = BAT_X, BAT_TOP, BOTTOM         # from the illustration's top to the last line
         cx = (x0 + x1) / 2
         L.box(cx - 11 * K, PAD, cx + 11 * K, PAD + 5 * K, 2 * K, PAL["outline"])     # nub
         L.box(x0, y0, x1, y1, 12 * K, None, PAL["outline"], 2 * K)                   # body
@@ -471,7 +460,7 @@ class Panel:
 
     def _buttons(self, awake):
         c, u = self.canvas, self.u
-        y = self.bottom + BTN_GAP
+        y = BOTTOM + BTN_GAP
         fx0, fy0, fx1, fy1 = PAD, y, W - PAD - BTN_H - 8, y + BTN_H
         fw, fh = fx1 - fx0, fy1 - fy0
         label = "Buscar mando"

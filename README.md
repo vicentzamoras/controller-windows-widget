@@ -21,8 +21,8 @@ project (MIT, see [NOTICE.md](NOTICE.md)).
   controller illustration, the battery level in big type, a vertical battery
   coloured like the controller's LED (white on the puck, blue on Bluetooth,
   green on USB-C, orange when charging off on the dock, red when low), the link
-  icon, the puck's signal (bars and dBm) and the estimated time left. It closes
-  on a click outside or with Esc.
+  icon and the puck's signal (bars and dBm). The card keeps the same height in
+  every state. It closes on a click outside or with Esc.
 - **Find my controller**: pulses the controller's haptics, or plays a tune on
   them (tick-tock, bird, ringing, SOS, alarm), so you can locate it.
 - **Tooltip**: level, charging state, link, signal and time left.
