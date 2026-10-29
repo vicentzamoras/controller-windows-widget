@@ -43,6 +43,8 @@ def main():
                     help=f"make the controller findable (melodies: {', '.join(protocol.MELODIES)})")
     args = ap.parse_args()
     if args.headless:
+        if sys.stdout is None:  # windowed exe: nowhere to print
+            return 2
         return headless()
     if args.find is not None:
         return find(args.find)

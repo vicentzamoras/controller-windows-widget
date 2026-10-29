@@ -26,6 +26,18 @@ python -m venv .venv
 Ajustes en `%APPDATA%\SC2Tray\config.json`; historial de 24 h en
 `%LOCALAPPDATA%\SC2Tray\history.json`.
 
+## Ejecutable
+
+```powershell
+.\.venv\Scripts\python tools\build_exe.py
+```
+
+Genera `dist\SC2Tray.exe` (un solo archivo, ~16 MB, sin necesidad de Python).
+Cópialo donde quieras y actívale "Iniciar con Windows" desde el menú: el
+autoarranque apunta a la ruta del `.exe`, así que si lo mueves, vuelve a
+activarlo. `--find` funciona también con el `.exe`; `--headless` no, porque
+no tiene consola.
+
 ## Estructura
 
 | Archivo | Función |
@@ -38,6 +50,7 @@ Ajustes en `%APPDATA%\SC2Tray\config.json`; historial de 24 h en
 | `src/sc2tray/tray.py` | pystray: icono, tooltip, menú, notificaciones |
 | `src/sc2tray/config.py` | ajustes, autoarranque (HKCU Run), instancia única, tema |
 | `tools/hid_probe.py` | lista las colecciones HID y muestrea reports (diagnóstico) |
+| `tools/build_exe.py` | icono de la app + PyInstaller → `dist\SC2Tray.exe` |
 
 ## Protocolo en Windows
 
