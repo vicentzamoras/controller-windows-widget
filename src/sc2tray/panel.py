@@ -266,6 +266,7 @@ class Panel:
         self._active = False        # has had the foreground since it was shown
         self._hidden_at = 0
         self._menu_open = False
+        self._menu_closed_at = 0
         self._images = {}           # Tk keeps no reference of its own
         self._calls = queue.Queue()
         self._fonts()
@@ -342,6 +343,7 @@ class Panel:
             self._hidden_at = time.monotonic()
             self.root.withdraw()
             self.canvas.delete("all")
+            self.canvas.config(cursor="")   # hidden over a button: no <Leave> came to reset it
             self._images.clear()    # nothing of the card stays in memory while hidden
 
     def _place(self):
@@ -508,6 +510,9 @@ class Panel:
         self.app.find(None)
 
     def _more(self):
+        # A click on "..." while its menu is open dismisses the menu, then reaches us: leave it closed
+        if time.monotonic() - self._menu_closed_at < REOPEN_GUARD:
+            return
         app, cfg = self.app, self.app.cfg
         awake = app.monitor.live_path is not None
         tunes = [(label, lambda n=name: app.find(n), False, True) for name, label in app.MELODIES]
@@ -524,5 +529,6 @@ class Panel:
             popup_menu(self.hwnd, entries, button.right, button.top - self.u(4), button)
         finally:
             self._menu_open = False
+            self._menu_closed_at = time.monotonic()
             if self.visible:
                 user32.SetForegroundWindow(self.hwnd)

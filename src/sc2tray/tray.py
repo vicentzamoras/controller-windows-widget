@@ -176,7 +176,6 @@ class App:
         return Menu(
             # Default item: left click (and its bold label) opens the panel
             MenuItem(lambda item: header(self.state), lambda: self.panel.call(self.panel.toggle), default=True),
-            MenuItem(lambda item: status(self.state), None, enabled=False),
             Menu.SEPARATOR,
             MenuItem("Buscar mando", find, enabled=awake),
             Menu.SEPARATOR,

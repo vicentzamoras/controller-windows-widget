@@ -19,10 +19,10 @@ def duration(minutes):
 
 def header(st):
     if st.connected and st.battery_pct >= 0 and not st.provisional:
-        return f"Steam Controller 2 — {st.battery_pct} %"
+        return f"Steam Controller 2: {st.battery_pct} %"
     if st.connected:
-        return "Steam Controller 2 — leyendo batería…"
-    return "Steam Controller 2 — sin conexión"
+        return "Steam Controller 2: leyendo batería…"
+    return "Steam Controller 2: sin conexión"
 
 
 def status(st):

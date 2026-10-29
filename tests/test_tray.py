@@ -8,7 +8,7 @@ LIVE = ControllerState(battery_pct=78, connected=True, provisional=False, connec
 
 
 def test_tooltip_live():
-    assert tray.tooltip(LIVE) == ("Steam Controller 2 — 78 %\nCon batería · Puck\n"
+    assert tray.tooltip(LIVE) == ("Steam Controller 2: 78 %\nCon batería · Puck\n"
                                   "Señal excelente (−52 dBm)\nQuedan ~3 h 10 min")
 
 
@@ -16,7 +16,7 @@ def test_tooltip_states():
     charging = replace(LIVE, charging=True, docked=True, signal_dbm=None, eta_min=80)
     assert tray.tooltip(charging).splitlines()[1:] == ["Cargando · Puck · en el dock", "Lleno en ~1 h 20 min"]
     off = replace(LIVE, connected=False, provisional=True, connection="", signal_dbm=None, eta_min=None)
-    assert tray.tooltip(off).splitlines() == ["Steam Controller 2 — sin conexión",
+    assert tray.tooltip(off).splitlines() == ["Steam Controller 2: sin conexión",
                                               "Mando apagado o fuera de alcance", "Último nivel: 78 % (14:32)"]
     assert tray.status(replace(off, receiver=False)) == "Receptor no conectado"
     assert tray.status(replace(off, docked=True)) == "Apagado en el dock · cargando"
