@@ -18,15 +18,15 @@ python -m venv .venv
 .\.venv\Scripts\python -m sc2tray --find ticktock
 ```
 
-- **Panel (clic izquierdo)**: tarjeta oscura al estilo del widget de Plasma, con
-  sus iconos: ilustración del mando, nivel grande, batería vertical del color del
-  LED (blanco puck, azul Bluetooth, verde USB-C, naranja apagado en el dock, rojo
-  batería baja). Bajo la ilustración, dos columnas: el nivel, el estado, la señal
-  del puck (barras y dBm) y el tiempo estimado; a su derecha, el icono grande del
-  enlace (puck, Steam Machine, Bluetooth o USB-C) con el pie a ras del de la
-  batería. La batería va de la parte superior de la ilustración a la última
-  línea, y ella más los botones fijan la altura de la tarjeta (una línea más
-  solo si hay tiempo estimado). Abajo, "Buscar mando" hace vibrar el mando y "⋯" abre
+- **Panel (clic izquierdo)**: la tarjeta del widget de Plasma al 130 %, con sus
+  proporciones e iconos: ilustración del mando, nivel grande, batería vertical
+  del color del LED (blanco puck, azul Bluetooth, verde USB-C, naranja apagado en
+  el dock, rojo batería baja) pegada a la ilustración. Bajo la ilustración, el
+  nivel, el estado, la señal del puck (barras y dBm) y el tiempo estimado; a su
+  derecha, bajo la empuñadura del mando, el icono del enlace (puck, Steam
+  Machine, Bluetooth o USB-C) con el pie a ras del de la batería. La batería
+  más los botones fijan la altura de la tarjeta (una línea más solo si hay
+  tiempo estimado). Abajo, "Buscar mando" hace vibrar el mando y "⋯" abre
   encima las melodías y los ajustes. Se cierra al hacer clic fuera o con Esc.
 - **Tooltip**: nivel, estado de carga, enlace, señal (dBm) y tiempo estimado.
 - **Menú (clic derecho)**: Buscar mando (vibración o melodía en los actuadores

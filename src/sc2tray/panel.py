@@ -21,27 +21,30 @@ from PIL import Image, ImageDraw, ImageTk
 from . import config, text
 from . import protocol as p
 
-W = 308                     # card width in px at 96 dpi (height: layout()); everything is in these units
-PAD = 14
 SS = 4                      # supersampling for shapes and icons
 MARGIN = 12                 # gap to the taskbar and the screen edge
 POLL_MS = 100               # cross-thread calls and the "did we lose the foreground" check
 REOPEN_GUARD = 0.4          # s: a tray click that just closed the panel must not reopen it
 
-# Zones, as on the reference widget's card. Two columns: the battery on the right; on the
-# left the illustration over the info block, itself two columns (number and status lines,
-# then the link icon). Nothing stretches: the lines set the battery's foot, and the battery
-# plus the action row set the card's height (layout()).
-ART = (PAD, PAD, 140, 105)  # illustration: x, y, w, h (4:3)
-BASELINE = 156              # big number, right under the illustration
-LINE_Y, LINE_STEP = 175, 20 # status, signal, time left: as many as there is to say
-TEXT_X = PAD + 18           # status text, right of its glyph
-BAT_X = (W - PAD - 56, W - PAD)
-BAT_TOP = PAD + 8           # body under the nub
-LINK_GAP, TEXT_GAP = 10, 6  # link icon to the battery, text to the link icon
-LINK_SIZE = {"steam-machine": 69}   # 1.3x the reference widget's 50 (53 for the bigger drawing)
-LINK_DEFAULT = 65
-BTN_H, BTN_GAP = 32, 12     # action row: "Buscar mando" and "..."
+# The reference widget's card at 130 %. Its zones: a 132-wide column (the illustration over
+# the number and status lines), a 22 gap, the 58-wide battery. The battery stays close to the
+# illustration, so the link icon (10 left of the battery, its foot on the battery's) tucks in
+# under the controller's right grip, beside the lines. Nothing stretches: the lines set the
+# battery's foot, and the battery plus the action row set the card's height (layout()).
+K = 1.3
+PAD = 16
+COL_W, COL_GAP, BAT_W = 132 * K, 22 * K, 58 * K
+W = round(2 * PAD + COL_W + COL_GAP + BAT_W)   # card width in px at 96 dpi; everything is in these units
+ART = (PAD + 4.5 * K, PAD, 123 * K, 92 * K)    # illustration: x, y, w, h
+BASELINE = ART[1] + ART[3] + 37                # big number, right under the illustration
+LINE_Y, LINE_STEP = BASELINE + 19, 21          # status, signal, time left: as many as there is to say
+TEXT_X = PAD + 21                              # status text, right of its glyph
+BAT_X = (W - PAD - BAT_W, W - PAD)
+BAT_TOP = PAD + 8 * K                          # body under the nub
+LINK_GAP, TEXT_GAP = 10 * K, 6                 # link icon to the battery, text to the link icon
+LINK_SIZE = {"steam-machine": 53 * K}          # the bigger drawing
+LINK_DEFAULT = 50 * K
+BTN_H, BTN_GAP = 32, 12                        # action row: "Buscar mando" and "..."
 
 PAL = {
     "bg": "#1E2124", "border": "#383D43", "btn_off": "#272B30", "btn_off_border": "#32373D",
@@ -277,8 +280,8 @@ class Panel:
         semi = _family("Segoe UI Variable Text Semibold", "Segoe UI Semibold")
         display = _family("Segoe UI Variable Display Semib", "Segoe UI Semibold")
         px = lambda family, size: tkfont.Font(family=family, size=-self.u(size))
-        self.f_body = px(text_f, 13)
-        self.f_strong = px(semi, 13)
+        self.f_body = px(text_f, 14)
+        self.f_strong = px(semi, 14)
         self.f_number = px(display, 40)
         self.f_unit = px(text_f, 18)
 
@@ -442,17 +445,17 @@ class Panel:
     def _battery(self, L, st, role):
         (x0, x1), y0, y1 = BAT_X, BAT_TOP, self.bottom    # from the illustration's top to the last line
         cx = (x0 + x1) / 2
-        L.box(cx - 11, PAD, cx + 11, PAD + 5, 1.5, PAL["outline"])                   # nub
-        L.box(x0, y0, x1, y1, 5, None, PAL["outline"], 2)                             # body
-        inset = 5
+        L.box(cx - 11 * K, PAD, cx + 11 * K, PAD + 5 * K, 2 * K, PAL["outline"])     # nub
+        L.box(x0, y0, x1, y1, 12 * K, None, PAL["outline"], 2 * K)                   # body
+        inset = 5 * K
         full = (y1 - y0) - 2 * inset
         top = y1 - inset - full * max(0, min(100, st.battery_pct)) / 100
         if st.battery_pct > 0:
-            L.box(x0 + inset, top, x1 - inset, y1 - inset, 2.5, STATE[role])
+            L.box(x0 + inset, top, x1 - inset, y1 - inset, min(7 * K, (y1 - inset - top) / 2), STATE[role])
         if charging(st):
-            mid = (y0 + y1) / 2
-            ink = ink_on(STATE[role]) if top < mid - 10 else PAL["text"]
-            L.icon("bolt", cx - 10, mid - 10, 20, 20, ink)
+            mid, b = (y0 + y1) / 2, 18 * K
+            ink = ink_on(STATE[role]) if top < mid - b / 2 else PAL["text"]
+            L.icon("bolt", cx - b / 2, mid - b / 2, b, b, ink)
 
     # --- buttons ---------------------------------------------------------
 

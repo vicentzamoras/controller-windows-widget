@@ -10,17 +10,17 @@ OFF = replace(LIVE, connected=False, provisional=True, connection="", signal_dbm
 
 def test_headline_and_detail():
     assert text.headline(LIVE, False) == "Conectado"
-    assert text.detail(LIVE) == ("hourglass", "Quedan ~3 h 10 min")
-    assert text.headline(replace(LIVE, battery_pct=12), True) == "Baja — conéctalo"
+    assert text.detail(LIVE) == ("hourglass", "~3 h 10 min")
+    assert text.headline(replace(LIVE, battery_pct=12), True) == "Batería baja"
     charging = replace(LIVE, charging=True, eta_min=80)
-    assert (text.headline(charging, False), text.detail(charging)) == ("Cargando", ("hourglass", "Lleno en ~1 h 20 min"))
+    assert (text.headline(charging, False), text.detail(charging)) == ("Cargando", ("hourglass", "~1 h 20 min"))
     full = replace(LIVE, charging=True, charged=True, eta_min=None)
     assert (text.headline(full, False), text.detail(full)) == ("Cargado", None)
-    assert text.headline(replace(LIVE, provisional=True), False) == "Leyendo batería…"
-    assert text.headline(OFF, False) == "Apagado o fuera de alcance"
-    assert text.detail(OFF) == ("clock", "Último dato 14:32")
-    assert text.detail(replace(OFF, last_seen="")) == ("clock", "Último valor conocido")
-    assert text.headline(replace(OFF, docked=True), False) == "Apagado en el dock"
+    assert text.headline(replace(LIVE, provisional=True), False) == "Leyendo…"
+    assert text.headline(OFF, False) == "Sin conexión"
+    assert text.detail(OFF) == ("clock", "Dato de 14:32")
+    assert text.detail(replace(OFF, last_seen="")) == ("clock", "Último valor")
+    assert text.headline(replace(OFF, docked=True), False) == "En el dock"
     assert text.headline(replace(OFF, battery_pct=-1, receiver=False), False) == "Receptor no conectado"
     assert text.detail(replace(OFF, battery_pct=-1, last_seen="")) is None
     assert (text.signal(LIVE), text.signal(OFF)) == ("−52 dBm", "—")
@@ -28,14 +28,14 @@ def test_headline_and_detail():
 
 def test_status_lines():
     assert panel.status_lines(LIVE, "puck") == [("dot", "Conectado"), ("bars", "−52 dBm"),
-                                                ("hourglass", "Quedan ~3 h 10 min")]
+                                                ("hourglass", "~3 h 10 min")]
     bt = replace(LIVE, connection="bluetooth", signal_dbm=None, eta_min=None)
     assert panel.status_lines(bt, "bluetooth") == [("bluetooth", "Conectado")]
     usb = replace(LIVE, connection="usb", charging=True, signal_dbm=None, eta_min=40)
-    assert panel.status_lines(usb, "usb") == [("bolt", "Cargando"), ("hourglass", "Lleno en ~40 min")]
-    assert panel.status_lines(replace(LIVE, battery_pct=12), "low")[0] == ("dot", "Baja — conéctalo")
-    assert panel.status_lines(replace(OFF, docked=True), "dock") == [("bolt", "Apagado en el dock"),
-                                                                    ("clock", "Último dato 14:32")]
+    assert panel.status_lines(usb, "usb") == [("bolt", "Cargando"), ("hourglass", "~40 min")]
+    assert panel.status_lines(replace(LIVE, battery_pct=12), "low")[0] == ("dot", "Batería baja")
+    assert panel.status_lines(replace(OFF, docked=True), "dock") == [("bolt", "En el dock"),
+                                                                    ("clock", "Dato de 14:32")]
 
 
 def test_layout():
@@ -53,9 +53,10 @@ def test_link_box():
         left, top, right, foot = panel._ink(name)
         assert abs(y + foot * size - bottom) < 1e-6                         # foot on the battery's
         assert abs(x + right * size - (panel.BAT_X[0] - panel.LINK_GAP)) < 1e-6
-        assert y + top * size > panel.ART[1] + panel.ART[3] - 30           # beside the info block
+        assert y + top * size > panel.ART[1] + panel.ART[3]                # under the illustration
+        assert x + left * size < panel.ART[0] + panel.ART[2]                # ...its right grip
     assert panel.link_box("puck", bottom)[2] == round(50 * 1.3)
-    assert 120 <= panel.text_room("puck") < panel.text_room(None)
+    assert 95 <= panel.text_room("puck") < panel.text_room(None)
 
 
 def test_state_role():

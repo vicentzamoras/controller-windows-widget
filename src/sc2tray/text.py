@@ -56,24 +56,24 @@ def headline(st, low):
     """First status line; `low` = the level is at or below the warning threshold."""
     if not st.connected:
         if st.docked:
-            return "Apagado en el dock"
-        return "Apagado o fuera de alcance" if st.receiver else "Receptor no conectado"
+            return "En el dock"
+        return "Sin conexión" if st.receiver else "Receptor no conectado"
     if st.provisional or st.battery_pct < 0:
-        return "Leyendo batería…"
+        return "Leyendo…"
     if st.charged:
         return "Cargado"
     if st.charging:
         return "Cargando"
-    return "Baja — conéctalo" if low else "Conectado"
+    return "Batería baja" if low else "Conectado"
 
 
 def detail(st):
-    """Last status line as (icon, text), or None: time left, or the age of a stale reading."""
+    """Last status line as (icon, text), or None: time left (to empty, or to full while the
+    first line says it is charging), or the age of a stale reading."""
     if st.connected and not st.provisional and st.eta_min is not None:
-        return "hourglass", (f"Lleno en ~{duration(st.eta_min)}" if st.charging
-                             else f"Quedan ~{duration(st.eta_min)}")
+        return "hourglass", f"~{duration(st.eta_min)}"
     if not st.connected and st.battery_pct >= 0:
-        return "clock", f"Último dato {st.last_seen}" if st.last_seen else "Último valor conocido"
+        return "clock", f"Dato de {st.last_seen}" if st.last_seen else "Último valor"
     return None
 
 
