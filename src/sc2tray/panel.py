@@ -508,7 +508,7 @@ class Panel:
         tunes = [(label, lambda n=name: app.find(n), False, True) for name, label in app.melodies()]
         languages = [(label, lambda c=choice: app.set_language(c), cfg["language"] == choice, True)
                      for choice, label in app.languages()]
-        entries = [(t("find_tune"), tunes, False, awake), None,
+        entries = [(t("find"), tunes, False, awake), None,
                    *[(label, lambda k=key: cfg.toggle(k), cfg[key], True) for key, label in app.toggles()],
                    (t("autostart"), app.toggle_autostart, config.autostart_enabled(), True),
                    (t("language"), languages, False, True),

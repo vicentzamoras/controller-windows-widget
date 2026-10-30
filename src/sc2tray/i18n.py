@@ -57,8 +57,6 @@ STRINGS = {
     "last_value": ("Último valor", "Last value"),
     # actions and settings
     "find": ("Buscar mando", "Find controller"),
-    "find_tune": ("Buscar con melodía", "Find with a tune"),
-    "vibration_only": ("Solo vibración", "Vibration only"),
     "melody_ticktock": ("Tic-tac", "Tick-tock"),
     "melody_bird": ("Pájaro", "Bird"),
     "melody_ringing": ("Timbre", "Ringing"),

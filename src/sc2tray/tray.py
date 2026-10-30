@@ -179,10 +179,7 @@ class App:
     def _menu(self):
         awake = lambda item: self.monitor.live_path is not None
         tune = lambda name: lambda: self.find(name)     # pystray actions take 0-2 arguments
-        find = Menu(
-            MenuItem(t("vibration_only"), lambda: self.find(None)),
-            Menu.SEPARATOR,
-            *[MenuItem(label, tune(name)) for name, label in self.melodies()])
+        find = Menu(*[MenuItem(label, tune(name)) for name, label in self.melodies()])
         toggle = lambda key: MenuItem(lambda item: dict(self.toggles())[key], lambda: self.cfg.toggle(key),
                                       checked=lambda item: self.cfg[key])
         language = lambda choice, label: MenuItem(label, lambda: self.set_language(choice), radio=True,
