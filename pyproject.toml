@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sc2tray"
-version = "0.1.0"
+version = "0.1.1"
 description = "Windows 11 system tray app for Steam Controller 2 battery and connection status"
 readme = "README.md"
 license = "MIT"
